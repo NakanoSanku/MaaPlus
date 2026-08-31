@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+from collections.abc import Sequence
 from typing import Any
 
 from ._maa import compile_locator
@@ -42,12 +44,55 @@ class Runtime:
 
         return MatchResult(recognition)
 
-    def click(self, point: Point) -> bool:
-        x, y = point
-        job = self.controller.post_click(x, y).wait()
-        if not job.succeeded:
-            raise RuntimeError(f"MaaFramework click failed at ({x}, {y})")
+    def click(self, point: Point, duration: int) -> bool:
+        if duration < 0:
+            raise ValueError("duration must be >= 0")
+
+        self._touch_down(point)
+        try:
+            time.sleep(duration / 1000)
+        finally:
+            self._touch_up()
         return True
+
+    def swipe(self, points: Sequence[Point], duration: int) -> bool:
+        path = tuple(points)
+        if len(path) < 2:
+            raise ValueError("swipe requires at least two points")
+        if duration < 0:
+            raise ValueError("duration must be >= 0")
+
+        self._touch_down(path[0])
+        started_at = time.monotonic()
+        step_duration = duration / 1000 / (len(path) - 1)
+
+        try:
+            for index, point in enumerate(path[1:], 1):
+                delay = started_at + step_duration * index - time.monotonic()
+                if delay > 0:
+                    time.sleep(delay)
+                self._touch_move(point)
+        finally:
+            self._touch_up()
+
+        return True
+
+    def _touch_down(self, point: Point) -> None:
+        x, y = point
+        job = self.controller.post_touch_down(x, y).wait()
+        if not job.succeeded:
+            raise RuntimeError(f"MaaFramework touch down failed at ({x}, {y})")
+
+    def _touch_move(self, point: Point) -> None:
+        x, y = point
+        job = self.controller.post_touch_move(x, y).wait()
+        if not job.succeeded:
+            raise RuntimeError(f"MaaFramework touch move failed at ({x}, {y})")
+
+    def _touch_up(self) -> None:
+        job = self.controller.post_touch_up().wait()
+        if not job.succeeded:
+            raise RuntimeError("MaaFramework touch up failed")
 
     def stop(self) -> None:
         if not getattr(self.tasker, "running", False):
