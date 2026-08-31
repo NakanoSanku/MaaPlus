@@ -1,7 +1,6 @@
 from .locator import Locator, OCR, Rect, Template
-from .result import MatchResult
 from .runner import Runner
-from .runtime import Runtime
+from .runtime import MatchResult, Runtime
 
 __all__ = [
     "Locator",
