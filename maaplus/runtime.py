@@ -40,14 +40,7 @@ class Runtime:
         if recognition is None:
             raise RuntimeError("MaaFramework recognition returned no recognition detail")
 
-        best = recognition.best_result
-        return Match(
-            hit=recognition.hit,
-            box=tuple(recognition.box) if recognition.box is not None else None,
-            score=getattr(best, "score", None) if best is not None else None,
-            detail=best,
-            raw_detail=recognition.raw_detail,
-        )
+        return Match(recognition)
 
     def click(self, box: Rect) -> bool:
         x, y, width, height = box
