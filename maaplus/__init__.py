@@ -1,4 +1,4 @@
-from .errors import LocatorNotFound, MaaPlusError, RuntimeOperationError
+from .errors import MaaPlusError, RuntimeOperationError
 from .flow import Flow, FlowContext
 from .locator import Locator, OCR, Rect, Template
 from .result import BoundMatch, MatchResult
@@ -10,7 +10,6 @@ __all__ = [
     "Flow",
     "FlowContext",
     "Locator",
-    "LocatorNotFound",
     "MaaPlusError",
     "MatchResult",
     "OCR",
