@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Callable
 
 from .locator import Rect
+
+if TYPE_CHECKING:
+    from maa.define import RecognitionDetail
 
 
 @dataclass(slots=True)
 class Match:
     """Thin wrapper around MaaFramework RecognitionDetail with click sugar."""
 
-    detail: Any
+    detail: RecognitionDetail
     _click: Callable[[Rect], bool] | None = field(default=None, repr=False)
 
     @property
