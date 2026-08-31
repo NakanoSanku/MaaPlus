@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from .errors import LocatorNotFound
 from .locator import Locator, Rect
 
 
@@ -54,15 +53,8 @@ class BoundMatch:
     def detail(self) -> Any:
         return self.result.detail
 
-    def require(self) -> BoundMatch:
-        if not self.hit:
-            raise LocatorNotFound(f"Required locator was not found: {self.result.locator!r}")
-        return self
-
     def click(self) -> bool:
-        """Click the matched box. A miss is intentionally a no-op returning False."""
-        if not self.hit:
+        """Click the matched box. A miss or non-clickable result is a no-op."""
+        if not self.hit or self.box is None:
             return False
-        if self.box is None:
-            raise LocatorNotFound(f"Matched locator has no clickable box: {self.result.locator!r}")
         return self._context.click_box(self.box)
