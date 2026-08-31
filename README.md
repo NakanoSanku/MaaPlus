@@ -2,7 +2,7 @@
 
 MaaPlus is a minimal code-first layer on top of [MaaFramework](https://github.com/MaaXYZ/MaaFramework).
 
-MaaFramework keeps responsibility for recognition, resources, controllers, and native execution. MaaPlus only adds a small Python-side runtime, match-result sugar, gesture helpers, and one-screenshot-per-flow execution.
+MaaFramework keeps responsibility for recognition, resources, controllers, and native execution. MaaPlus only adds a small Python-side runtime, match-result sugar, gesture helpers, and snapshot-driven flow execution.
 
 ## Core API
 
@@ -10,7 +10,7 @@ MaaFramework keeps responsibility for recognition, resources, controllers, and n
 - `OCR` — alias of MaaFramework `JOCR`.
 - `MatchResult` — thin wrapper around MaaFramework `RecognitionDetail`, adding truthiness and `click()`.
 - `Runtime` — screenshot, match, click, and swipe primitives over MaaFramework.
-- `Runner` — captures one screenshot and executes a plain Python flow function against it.
+- `Runner` — owns flow ticks, the continuous run loop, stop state, and MaaFramework lifecycle.
 
 There is no MaaPlus locator schema. `Runtime.match()` accepts MaaFramework `JRecognitionParam` directly, so MaaFramework recognition features are not copied or restricted by MaaPlus.
 
@@ -66,10 +66,16 @@ result = runtime.match(feature, image)
 
 ## Flow semantics
 
-One `Runner.run(flow)` call is one decision tick over one fixed screenshot.
+A flow is an ordinary Python callable:
+
+```python
+flow(runtime, image) -> bool
+```
+
+One **tick** always means one fresh screenshot and one flow call:
 
 ```text
-runner.run(flow)
+Runner.tick(flow)
       ↓
 Runtime.screenshot()   # exactly once
       ↓
@@ -78,9 +84,12 @@ flow(runtime, image)
 all match(..., image) calls use that same image
 ```
 
-Clicks and swipes do not replace the current image. To observe the UI after an action, run the flow again; the next `Runner.run(flow)` captures a fresh screenshot.
+Actions do not replace the image inside the current tick. The flow returns:
 
-Flows are therefore best written as one-snapshot state decisions:
+- `True` — run another tick with a fresh screenshot.
+- `False` — the flow is complete.
+
+Example:
 
 ```python
 from maaplus import OCR, Runtime, Template
@@ -92,23 +101,77 @@ class Login:
     CONFIRM = OCR(expected=["确认"])
 
 
-def login(runtime: Runtime, image) -> None:
+def login(runtime: Runtime, image) -> bool:
     close = runtime.match(Login.CLOSE, image)
     if close:
         close.click()
-        return
+        return True
 
     start = runtime.match(Login.START, image)
     if start:
         start.click()
-        return
+        return True
 
     confirm = runtime.match(Login.CONFIRM, image)
     if confirm:
         confirm.click()
+        return False
+
+    return False
 ```
 
-Call `runner.run(login)` again when the next screen state should be evaluated.
+The flow itself still owns all business decisions. The boolean only tells `Runner` whether another screenshot-driven tick is needed.
+
+## Runner
+
+Use `tick()` when the caller wants exactly one snapshot decision:
+
+```python
+continue_running = runner.tick(login)
+```
+
+Use `run()` when `Runner` should keep producing fresh ticks until the flow returns `False` or `stop()` is called:
+
+```python
+runner.run(login)
+```
+
+Execution looks like:
+
+```text
+run(flow)
+   ↓
+ screenshot #1 → flow → True
+   ↓
+ screenshot #2 → flow → True
+   ↓
+ screenshot #3 → flow → False
+   ↓
+ done
+```
+
+An optional tick interval is expressed in milliseconds:
+
+```python
+runner.run(login, interval=100)
+```
+
+`Runner.stop()` requests the loop to stop and also forwards stop to the MaaFramework runtime. The interval wait is interruptible by `stop()`.
+
+`Runner.running` reports whether the continuous run loop is active. Re-entering `run()` while it is already running raises `RuntimeError`.
+
+Runner also supports context-manager cleanup:
+
+```python
+with Runner.from_maa(
+    tasker=tasker,
+    controller=controller,
+    resource=resource,
+) as runner:
+    runner.run(login, interval=100)
+```
+
+Runner deliberately does not understand UI states, retries, transitions, or task graphs. It only owns the tick/run lifecycle.
 
 ## MatchResult
 
@@ -193,9 +256,9 @@ runtime.swipe(
 )
 ```
 
-## Running a flow
+## MaaFramework setup
 
-Controller discovery and resource loading remain normal MaaFramework code:
+Controller discovery and resource loading remain normal MaaFramework code. `Runner.from_maa()` only owns the final composition/bind step:
 
 ```python
 from maa.resource import Resource
@@ -205,13 +268,12 @@ from maaplus import Runner
 resource = Resource()
 resource.post_bundle("./resource").wait()
 
-runner = Runner.from_maa(
+with Runner.from_maa(
     tasker=Tasker(),
     controller=controller,
     resource=resource,
-)
-
-runner.run(login)
+) as runner:
+    runner.run(login)
 ```
 
 See `examples/basic_adb.py` for a complete ADB example.
@@ -219,15 +281,24 @@ See `examples/basic_adb.py` for a complete ADB example.
 ## Architecture
 
 ```text
-Business flow(runtime, image)
-          ↑
-Runner -- captures one image per run
-          ↓
-       Runtime
-   screenshot / match
-    click / swipe
-          ↓
-    MaaFramework
+                    Runner
+          tick lifecycle / run loop
+                       │
+             fresh screenshot
+                       ↓
+          Business flow(runtime, image)
+                       │
+                 True / False
+                       │
+              ┌────────┴────────┐
+              │                 │
+          next tick            done
+
+                    Runtime
+              match / click / swipe
+                       │
+                       ↓
+                  MaaFramework
 ```
 
 Recognition descriptions are MaaFramework objects, not MaaPlus copies:
