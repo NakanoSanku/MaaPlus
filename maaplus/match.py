@@ -10,8 +10,8 @@ if TYPE_CHECKING:
 
 
 @dataclass(slots=True)
-class Match:
-    """Thin wrapper around MaaFramework RecognitionDetail with click sugar."""
+class MatchResult:
+    """MaaFramework recognition result with click sugar."""
 
     detail: RecognitionDetail
     _click: Callable[[Rect], bool] | None = field(default=None, repr=False)
