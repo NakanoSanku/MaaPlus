@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, TypeAlias
 
 from .locator import Rect
 
 if TYPE_CHECKING:
     from maa.define import RecognitionDetail
+
+Point: TypeAlias = tuple[int, int]
+ClickResolver: TypeAlias = Callable[["MatchResult"], Point]
 
 
 @dataclass(slots=True)
@@ -14,7 +17,7 @@ class MatchResult:
     """MaaFramework recognition result with click sugar."""
 
     detail: RecognitionDetail
-    _click: Callable[[Rect], bool] | None = field(default=None, repr=False)
+    _click: Callable[[Point], bool] | None = field(default=None, repr=False)
 
     @property
     def hit(self) -> bool:
@@ -27,8 +30,17 @@ class MatchResult:
     def __bool__(self) -> bool:
         return self.hit
 
-    def click(self) -> bool:
-        box = self.box
-        if not self.hit or box is None or self._click is None:
+    def click(self, resolver: ClickResolver | None = None) -> bool:
+        if not self.hit or self._click is None:
             return False
-        return self._click(box)
+
+        if resolver is None:
+            box = self.box
+            if box is None:
+                return False
+            x, y, width, height = box
+            point = (x + width // 2, y + height // 2)
+        else:
+            point = resolver(self)
+
+        return self._click(point)
