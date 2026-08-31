@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 
 from maaplus import FlowContext, Match, Runner, Template
+
+
+def make_match(hit: bool, box=None) -> Match:
+    return Match(SimpleNamespace(hit=hit, box=box))
 
 
 class FakeRuntime:
@@ -17,7 +22,7 @@ class FakeRuntime:
         return object()
 
     def recognize(self, locator, frame) -> Match:
-        return self.hits.get(locator, Match(False))
+        return self.hits.get(locator, make_match(False))
 
     def click(self, box) -> bool:
         self.clicks.append(box)
@@ -32,8 +37,8 @@ class FlowContextTests(unittest.TestCase):
         runtime = FakeRuntime()
         first = Template("first.png")
         second = Template("second.png")
-        runtime.hits[first] = Match(True, (10, 20, 30, 40), 0.95)
-        runtime.hits[second] = Match(True, (50, 60, 20, 20), 0.90)
+        runtime.hits[first] = make_match(True, (10, 20, 30, 40))
+        runtime.hits[second] = make_match(True, (50, 60, 20, 20))
         ctx = FlowContext(runtime)
 
         self.assertTrue(ctx.find(first))
@@ -56,11 +61,18 @@ class FlowContextTests(unittest.TestCase):
     def test_click_without_box_is_false(self) -> None:
         runtime = FakeRuntime()
         locator = Template("no-box.png")
-        runtime.hits[locator] = Match(True)
+        runtime.hits[locator] = make_match(True)
         ctx = FlowContext(runtime)
 
         self.assertFalse(ctx.find(locator).click())
         self.assertEqual(runtime.clicks, [])
+
+    def test_match_keeps_original_detail(self) -> None:
+        detail = SimpleNamespace(hit=True, box=(1, 2, 3, 4), raw_detail={"foo": "bar"})
+        match = Match(detail)
+
+        self.assertIs(match.detail, detail)
+        self.assertEqual(match.box, (1, 2, 3, 4))
 
 
 class RunnerTests(unittest.TestCase):
