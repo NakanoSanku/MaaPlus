@@ -2,19 +2,16 @@
 
 MaaPlus is a minimal code-first layer on top of [MaaFramework](https://github.com/MaaXYZ/MaaFramework).
 
-MaaFramework keeps responsibility for recognition, resources, controllers, and native execution. MaaPlus only adds a small Python-side structure for locators, shared screenshots, simple result actions, and flow execution.
+MaaFramework keeps responsibility for recognition, resources, controllers, and native execution. MaaPlus only adds a small Python-side structure for locators, match results, gestures, and flow execution.
 
 ## Core API
 
-The MVP intentionally keeps the public surface small:
-
 - `Template` / `OCR` — describe how to match UI elements.
 - `MatchResult` — thin wrapper around MaaFramework `RecognitionDetail`, adding truthiness and `click()`.
-- `FlowContext` — shared screenshot plus `match()` and gesture coordination.
-- `Runtime` — thin MaaFramework adapter.
-- `Runner` — binds the runtime and executes a plain Python flow function.
+- `Runtime` — screenshot, match, click, and swipe primitives over MaaFramework.
+- `Runner` — captures one screenshot and executes a plain Python flow function against it.
 
-There is no `Page`, `BaseFlow`, `require()`, `wait()`, retry DSL, state machine, or plugin layer.
+There is no `Page`, `FlowContext`, `Session`, `BaseFlow`, `require()`, `wait()`, retry DSL, state machine, or plugin layer.
 
 ## Installation
 
@@ -24,30 +21,58 @@ This repository currently targets Python 3.14+ and MaaFramework 5.12.3+.
 uv sync
 ```
 
-## Basic usage
+## Flow semantics
+
+One `Runner.run(flow)` call is one decision tick over one fixed screenshot.
+
+```text
+runner.run(flow)
+      ↓
+Runtime.screenshot()   # exactly once
+      ↓
+flow(runtime, image)
+      ↓
+all match(..., image) calls use that same image
+```
+
+Clicks and swipes do not replace the current image. To observe the UI after an action, run the flow again; the next `Runner.run(flow)` captures a fresh screenshot.
+
+This means flows are best written as one-snapshot state decisions:
 
 ```python
-from maaplus import FlowContext, OCR, Template
+from maaplus import OCR, Runtime, Template
 
 
 class Login:
     START = Template("login/start.png", threshold=0.85)
+    CLOSE = OCR(("关闭", "跳过"))
     CONFIRM = OCR("确认")
 
 
-def login(ctx: FlowContext) -> None:
-    start = ctx.match(Login.START)
-    if not start:
+def login(runtime: Runtime, image) -> None:
+    close = runtime.match(Login.CLOSE, image)
+    if close:
+        close.click()
         return
 
-    start.click()
-    ctx.match(Login.CONFIRM).click()
+    start = runtime.match(Login.START, image)
+    if start:
+        start.click()
+        return
+
+    confirm = runtime.match(Login.CONFIRM, image)
+    if confirm:
+        confirm.click()
 ```
 
-A miss is simply false. `hit` and `box` are the only common convenience properties:
+Call `runner.run(login)` again when the next screen state should be evaluated.
+
+## MatchResult
+
+A miss is simply false. `hit` and `box` are the common convenience properties:
 
 ```python
-result = ctx.match(Login.START)
+result = runtime.match(Login.START, image)
 
 if result:
     print(result.box)
@@ -61,18 +86,16 @@ best_result = maa_detail.best_result
 raw_detail = maa_detail.raw_detail
 ```
 
-For example, template score or OCR text can be read from `best_result` according to the MaaFramework recognition type.
+## Click resolver
 
-## Click point resolver
-
-`click()` uses the center of the matched box by default and holds for 50 ms:
+`MatchResult.click()` uses the center of the matched box by default and holds for 50 ms:
 
 ```python
-ctx.match(Login.START).click()
-ctx.match(Login.START).click(duration=120)
+result.click()
+result.click(duration=120)
 ```
 
-A custom click algorithm is just a function from `MatchResult` to `(x, y)`:
+A custom click position is just a function from `MatchResult` to `(x, y)`:
 
 ```python
 from random import randrange
@@ -82,24 +105,17 @@ from maaplus import MatchResult
 
 def random_point(result: MatchResult) -> tuple[int, int]:
     x, y, width, height = result.box
-    return (
-        randrange(x, x + width),
-        randrange(y, y + height),
-    )
+    return randrange(x, x + width), randrange(y, y + height)
 
 
-ctx.match(Login.START).click(random_point, duration=80)
+result.click(random_point, duration=80)
 ```
-
-The resolver receives the whole `MatchResult`, so it may also use `result.detail` for recognition-specific positioning. MaaPlus does not define a strategy class hierarchy; custom positioning stays ordinary Python.
-
-`click()` returns `False` when recognition missed. With the default resolver it also returns `False` when no matched box exists.
 
 ## Runtime gestures
 
 Gesture durations are milliseconds.
 
-`Runtime.click(point, duration)` is defined as one continuous press:
+`Runtime.click(point, duration)` is one continuous press:
 
 ```text
 touch_down(point)
@@ -107,7 +123,11 @@ touch_down(point)
 touch_up()
 ```
 
-`Runtime.swipe(points, duration)` follows the supplied path:
+```python
+runtime.click((500, 300), duration=100)
+```
+
+`Runtime.swipe(points, duration)` follows the supplied path from the first point to the last:
 
 ```text
 touch_down(points[0])
@@ -118,17 +138,13 @@ touch_move(points[2])
     ↓
 ...
     ↓
-touch_move(points[-1])
-    ↓
 touch_up()
 ```
 
-The total duration is divided evenly across the `len(points) - 1` path intervals. A swipe requires at least two points.
-
-Flows normally use `FlowContext.swipe()` so the shared screenshot is invalidated after the gesture:
+The total duration is divided evenly across the `len(points) - 1` path intervals.
 
 ```python
-ctx.swipe(
+runtime.swipe(
     [(200, 800), (220, 650), (260, 500), (300, 350)],
     duration=400,
 )
@@ -157,41 +173,21 @@ runner.run(login)
 
 See `examples/basic_adb.py` for a complete ADB example.
 
-## Shared frame semantics
-
-Consecutive matches reuse one screenshot:
-
-```text
-ctx.match(A) ─┐
-ctx.match(B) ─┼─ same screenshot
-ctx.match(C) ─┘
-```
-
-A successful action invalidates it:
-
-```text
-ctx.match(A).click()
-        ↓
-frame invalidated
-        ↓
-ctx.match(B) -> new screenshot
-```
-
-`ctx.refresh()` can force a new screenshot explicitly.
-
 ## Architecture
 
 ```text
-Flow function
-    ↓
-FlowContext.match() / swipe()
-    ↓
-Locator → MatchResult
-    ↓
-Runtime click/swipe
-    ↓
-MaaFramework touch events
+Business flow(runtime, image)
+          ↑
+Runner -- captures one image per run
+          ↓
+       Runtime
+   screenshot / match
+    click / swipe
+          ↓
+    MaaFramework
 ```
+
+`Runtime` has no screenshot cache. The image used by a flow is explicit and immutable for that run.
 
 The rule is simple: MaaPlus should delete boilerplate, not create a second automation framework.
 
