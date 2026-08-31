@@ -3,16 +3,51 @@ from __future__ import annotations
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable, TypeAlias
+from typing import TYPE_CHECKING, Any, Callable, TypeAlias, cast
 
-from ._maa import compile_locator
-from .locator import Locator, Rect
+from maa.pipeline import (
+    JAnd,
+    JColorMatch,
+    JCustomRecognition,
+    JDirectHit,
+    JFeatureMatch,
+    JNeuralNetworkClassify,
+    JNeuralNetworkDetect,
+    JOCR,
+    JOr,
+    JRecognitionParam,
+    JRecognitionType,
+    JRect,
+    JTemplateMatch,
+)
 
 if TYPE_CHECKING:
+    import numpy
+
     from maa.define import RecognitionDetail
 
 Point: TypeAlias = tuple[int, int]
 ClickResolver: TypeAlias = Callable[["MatchResult"], Point]
+
+_RECOGNITION_TYPES: dict[type[Any], JRecognitionType] = {
+    JDirectHit: JRecognitionType.DirectHit,
+    JTemplateMatch: JRecognitionType.TemplateMatch,
+    JFeatureMatch: JRecognitionType.FeatureMatch,
+    JColorMatch: JRecognitionType.ColorMatch,
+    JOCR: JRecognitionType.OCR,
+    JNeuralNetworkClassify: JRecognitionType.NeuralNetworkClassify,
+    JNeuralNetworkDetect: JRecognitionType.NeuralNetworkDetect,
+    JAnd: JRecognitionType.And,
+    JOr: JRecognitionType.Or,
+    JCustomRecognition: JRecognitionType.Custom,
+}
+
+
+def _recognition_type(locator: JRecognitionParam) -> JRecognitionType:
+    try:
+        return _RECOGNITION_TYPES[type(locator)]
+    except KeyError as exc:
+        raise TypeError(f"Unsupported recognition parameter: {type(locator).__name__}") from exc
 
 
 @dataclass(slots=True)
@@ -27,8 +62,10 @@ class MatchResult:
         return bool(self.detail.hit)
 
     @property
-    def box(self) -> Rect | None:
-        return tuple(self.detail.box) if self.detail.box is not None else None
+    def box(self) -> JRect | None:
+        if self.detail.box is None:
+            return None
+        return cast(JRect, tuple(self.detail.box))
 
     def __bool__(self) -> bool:
         return self.hit
@@ -59,17 +96,16 @@ class Runtime:
         self.controller = controller
         self.resource = resource
 
-    def screenshot(self) -> Any:
+    def screenshot(self) -> numpy.ndarray:
         """Capture a fresh screenshot."""
         job = self.controller.post_screencap().wait()
         if not job.succeeded:
             raise RuntimeError("MaaFramework screencap failed")
         return job.get()
 
-    def match(self, locator: Locator, image: Any) -> MatchResult:
-        """Match a locator against the explicitly supplied screenshot."""
-        recognition_type, params = compile_locator(locator)
-        job = self.tasker.post_recognition(recognition_type, params, image).wait()
+    def match(self, locator: JRecognitionParam, image: numpy.ndarray) -> MatchResult:
+        """Run a MaaFramework recognition parameter against the supplied screenshot."""
+        job = self.tasker.post_recognition(_recognition_type(locator), locator, image).wait()
         if not job.succeeded:
             raise RuntimeError(f"MaaFramework recognition failed: {locator!r}")
 
