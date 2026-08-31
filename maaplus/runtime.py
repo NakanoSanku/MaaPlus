@@ -4,7 +4,7 @@ from typing import Any
 
 from ._maa import compile_locator
 from .locator import Locator, Rect
-from .match import Match
+from .match import MatchResult
 
 
 class Runtime:
@@ -23,7 +23,7 @@ class Runtime:
             raise RuntimeError("MaaFramework screencap failed")
         return job.get()
 
-    def recognize(self, locator: Locator, frame: Any) -> Match:
+    def recognize(self, locator: Locator, frame: Any) -> MatchResult:
         recognition_type, params = compile_locator(locator)
         job = self.tasker.post_recognition(recognition_type, params, frame).wait()
         if not job.succeeded:
@@ -40,7 +40,7 @@ class Runtime:
         if recognition is None:
             raise RuntimeError("MaaFramework recognition returned no recognition detail")
 
-        return Match(recognition)
+        return MatchResult(recognition)
 
     def click(self, box: Rect) -> bool:
         x, y, width, height = box
