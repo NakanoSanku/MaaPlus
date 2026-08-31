@@ -22,9 +22,9 @@ class Login:
 
 
 def login_flow(ctx: FlowContext) -> None:
-    ctx.find(Login.CLOSE_NOTICE).click()
+    ctx.match(Login.CLOSE_NOTICE).click()
 
-    start = ctx.find(Login.START)
+    start = ctx.match(Login.START)
     if not start:
         print("START not found")
         return
@@ -32,8 +32,8 @@ def login_flow(ctx: FlowContext) -> None:
     print(f"START matched: box={start.box}")
     start.click()
 
-    # The successful click invalidated the shared frame, so this find captures a new one.
-    ctx.find(Login.CONFIRM).click()
+    # The successful click invalidated the shared frame, so this match captures a new one.
+    ctx.match(Login.CONFIRM).click()
 
 
 def create_adb_controller() -> AdbController:
