@@ -2,15 +2,15 @@
 
 MaaPlus is a minimal code-first layer on top of [MaaFramework](https://github.com/MaaXYZ/MaaFramework).
 
-MaaFramework keeps responsibility for recognition, resources, controllers, and native execution. MaaPlus only adds a small Python-side structure for locators, shared screenshots, simple match actions, and flow execution.
+MaaFramework keeps responsibility for recognition, resources, controllers, and native execution. MaaPlus only adds a small Python-side structure for locators, shared screenshots, simple result actions, and flow execution.
 
 ## Core API
 
 The MVP intentionally keeps the public surface small:
 
-- `Template` / `OCR` — describe how to find UI elements.
-- `Match` — thin wrapper around MaaFramework `RecognitionDetail`, adding truthiness and `click()`.
-- `FlowContext` — shared screenshot plus `find()`.
+- `Template` / `OCR` — describe how to match UI elements.
+- `MatchResult` — thin wrapper around MaaFramework `RecognitionDetail`, adding truthiness and `click()`.
+- `FlowContext` — shared screenshot plus `match()`.
 - `Runtime` — thin MaaFramework adapter.
 - `Runner` — binds the runtime and executes a plain Python flow function.
 
@@ -36,27 +36,27 @@ class Login:
 
 
 def login(ctx: FlowContext) -> None:
-    start = ctx.find(Login.START)
+    start = ctx.match(Login.START)
     if not start:
         return
 
     start.click()
-    ctx.find(Login.CONFIRM).click()
+    ctx.match(Login.CONFIRM).click()
 ```
 
 A miss is simply false. `hit` and `box` are the only common convenience properties:
 
 ```python
-match = ctx.find(Login.START)
+result = ctx.match(Login.START)
 
-if match:
-    print(match.box)
+if result:
+    print(result.box)
 ```
 
 Algorithm-specific data is not copied into MaaPlus. Access the original MaaFramework recognition detail when needed:
 
 ```python
-maa_detail = match.detail
+maa_detail = result.detail
 best_result = maa_detail.best_result
 raw_detail = maa_detail.raw_detail
 ```
@@ -90,22 +90,22 @@ See `examples/basic_adb.py` for a complete ADB example.
 
 ## Shared frame semantics
 
-Consecutive finds reuse one screenshot:
+Consecutive matches reuse one screenshot:
 
 ```text
-ctx.find(A) ─┐
-ctx.find(B) ─┼─ same screenshot
-ctx.find(C) ─┘
+ctx.match(A) ─┐
+ctx.match(B) ─┼─ same screenshot
+ctx.match(C) ─┘
 ```
 
 A successful action invalidates it:
 
 ```text
-ctx.find(A).click()
+ctx.match(A).click()
         ↓
 frame invalidated
         ↓
-ctx.find(B) -> new screenshot
+ctx.match(B) -> new screenshot
 ```
 
 `ctx.refresh()` can force a new screenshot explicitly.
@@ -115,9 +115,9 @@ ctx.find(B) -> new screenshot
 ```text
 Flow function
     ↓
-FlowContext
+FlowContext.match()
     ↓
-Locator → Match
+Locator → MatchResult
     ↓
 Runtime
     ↓
