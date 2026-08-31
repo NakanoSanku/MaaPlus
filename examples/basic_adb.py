@@ -7,7 +7,7 @@ from maa.resource import Resource
 from maa.tasker import Tasker
 from maa.toolkit import Toolkit
 
-from maaplus import OCR, Runner, Runtime, Template
+from maaplus import OCR, Runtime, Scheduler, Task, Template
 
 
 ROOT = Path(__file__).resolve().parent
@@ -16,7 +16,6 @@ DEBUG_DIR = ROOT / ".debug"
 
 
 class Login:
-    # Template and OCR are aliases of MaaFramework JTemplateMatch / JOCR.
     START = Template(
         template=["login/start.png"],
         threshold=[0.85],
@@ -32,11 +31,10 @@ class Login:
 
 
 def login_flow(runtime: Runtime, image) -> bool:
-    # Every match in this tick uses exactly the same screenshot.
     close = runtime.match(Login.CLOSE_NOTICE, image)
     if close:
         close.click()
-        return True  # evaluate the resulting UI with a fresh screenshot
+        return True
 
     start = runtime.match(Login.START, image)
     if start:
@@ -47,9 +45,7 @@ def login_flow(runtime: Runtime, image) -> bool:
     confirm = runtime.match(Login.CONFIRM, image)
     if confirm:
         confirm.click()
-        return False  # flow complete
 
-    print("No known login state matched")
     return False
 
 
@@ -85,12 +81,13 @@ def main() -> None:
     DEBUG_DIR.mkdir(parents=True, exist_ok=True)
     Toolkit.init_option(str(DEBUG_DIR))
 
-    with Runner.from_maa(
+    with Scheduler.from_maa(
         tasker=Tasker(),
         controller=create_adb_controller(),
         resource=load_resource(),
-    ) as runner:
-        runner.run(login_flow, interval=100)
+    ) as scheduler:
+        scheduler.submit(Task("login", login_flow, priority=10))
+        scheduler.run(interval=100)
 
 
 if __name__ == "__main__":
