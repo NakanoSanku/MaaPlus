@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from maaplus import Flow, FlowContext, LocatorNotFound, MatchResult, Runner, Template
+from maaplus import Flow, FlowContext, MatchResult, Runner, Template
 
 
 class FakeRuntime:
@@ -46,7 +46,7 @@ class FlowContextTests(unittest.TestCase):
         self.assertTrue(ctx.find(second))
         self.assertEqual(runtime.frames, 2)
 
-    def test_optional_click_on_miss_is_false(self) -> None:
+    def test_click_on_miss_is_false(self) -> None:
         runtime = FakeRuntime()
         locator = Template("missing.png")
         ctx = FlowContext(runtime)
@@ -54,13 +54,14 @@ class FlowContextTests(unittest.TestCase):
         self.assertFalse(ctx.find(locator).click())
         self.assertEqual(runtime.clicks, [])
 
-    def test_require_raises_on_miss(self) -> None:
+    def test_click_without_box_is_false(self) -> None:
         runtime = FakeRuntime()
-        locator = Template("required.png")
+        locator = Template("no-box.png")
+        runtime.hits[locator] = MatchResult(locator, True, None, 0.95)
         ctx = FlowContext(runtime)
 
-        with self.assertRaises(LocatorNotFound):
-            ctx.find(locator).require()
+        self.assertFalse(ctx.find(locator).click())
+        self.assertEqual(runtime.clicks, [])
 
 
 class RunnerTests(unittest.TestCase):
