@@ -16,7 +16,7 @@ class FakeRuntime:
         self.frames = 0
         self.matches: list[tuple[object, object]] = []
         self.clicks: list[tuple[tuple[int, int], int]] = []
-        self.hits: dict[object, tuple[bool, object]] = {}
+        self.hits: dict[int, tuple[bool, object]] = {}
         self.stopped = False
 
     def screenshot(self) -> object:
@@ -25,7 +25,7 @@ class FakeRuntime:
 
     def match(self, locator, image) -> MatchResult:
         self.matches.append((locator, image))
-        hit, box = self.hits.get(locator, (False, None))
+        hit, box = self.hits.get(id(locator), (False, None))
         return make_match(hit, box, self.click)
 
     def click(self, point, duration=50) -> bool:
@@ -143,8 +143,8 @@ class FlowSnapshotTests(unittest.TestCase):
         runtime = FakeRuntime()
         first = Template(template=["first.png"])
         second = Template(template=["second.png"])
-        runtime.hits[first] = (True, (10, 20, 30, 40))
-        runtime.hits[second] = (True, (50, 60, 20, 20))
+        runtime.hits[id(first)] = (True, (10, 20, 30, 40))
+        runtime.hits[id(second)] = (True, (50, 60, 20, 20))
         runner = Runner(runtime)
 
         def flow(rt, image):
@@ -173,7 +173,7 @@ class FlowSnapshotTests(unittest.TestCase):
     def test_custom_click_resolver_and_duration(self) -> None:
         runtime = FakeRuntime()
         locator = Template(template=["button.png"])
-        runtime.hits[locator] = (True, (10, 20, 30, 40))
+        runtime.hits[id(locator)] = (True, (10, 20, 30, 40))
         image = runtime.screenshot()
 
         def bottom_right(result: MatchResult) -> tuple[int, int]:
