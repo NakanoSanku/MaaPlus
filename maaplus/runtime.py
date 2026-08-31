@@ -1,22 +1,14 @@
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Any
 
 from ._maa import compile_locator
-from .errors import RuntimeOperationError
 from .locator import Locator, Rect
-from .result import MatchResult
-
-
-class RuntimeLike(Protocol):
-    def screenshot(self) -> Any: ...
-    def recognize(self, locator: Locator, frame: Any) -> MatchResult: ...
-    def click(self, box: Rect) -> bool: ...
-    def stop(self) -> None: ...
+from .result import Match
 
 
 class Runtime:
-    """Thin synchronous facade over an already-created MaaFramework Tasker/Controller."""
+    """Thin synchronous facade over MaaFramework."""
 
     __slots__ = ("tasker", "controller", "resource")
 
@@ -28,36 +20,31 @@ class Runtime:
     def screenshot(self) -> Any:
         job = self.controller.post_screencap().wait()
         if not job.succeeded:
-            raise RuntimeOperationError("MaaFramework screencap failed")
+            raise RuntimeError("MaaFramework screencap failed")
         return job.get()
 
-    def recognize(self, locator: Locator, frame: Any) -> MatchResult:
+    def recognize(self, locator: Locator, frame: Any) -> Match:
         recognition_type, params = compile_locator(locator)
         job = self.tasker.post_recognition(recognition_type, params, frame).wait()
         if not job.succeeded:
-            raise RuntimeOperationError(f"MaaFramework recognition failed: {locator!r}")
+            raise RuntimeError(f"MaaFramework recognition failed: {locator!r}")
 
         task_detail = job.get()
         if task_detail is None:
-            raise RuntimeOperationError("MaaFramework recognition returned no task detail")
+            raise RuntimeError("MaaFramework recognition returned no task detail")
 
-        recognition = None
-        for node in reversed(task_detail.nodes):
-            if node.recognition is not None:
-                recognition = node.recognition
-                break
+        recognition = next(
+            (node.recognition for node in reversed(task_detail.nodes) if node.recognition is not None),
+            None,
+        )
         if recognition is None:
-            raise RuntimeOperationError("MaaFramework recognition returned no recognition detail")
+            raise RuntimeError("MaaFramework recognition returned no recognition detail")
 
-        box = tuple(recognition.box) if recognition.box is not None else None
         best = recognition.best_result
-        score = getattr(best, "score", None) if best is not None else None
-
-        return MatchResult(
-            locator=locator,
+        return Match(
             hit=recognition.hit,
-            box=box,
-            score=score,
+            box=tuple(recognition.box) if recognition.box is not None else None,
+            score=getattr(best, "score", None) if best is not None else None,
             detail=best,
             raw_detail=recognition.raw_detail,
         )
@@ -68,7 +55,7 @@ class Runtime:
         point_y = y + height // 2
         job = self.controller.post_click(point_x, point_y).wait()
         if not job.succeeded:
-            raise RuntimeOperationError(f"MaaFramework click failed at ({point_x}, {point_y})")
+            raise RuntimeError(f"MaaFramework click failed at ({point_x}, {point_y})")
         return True
 
     def stop(self) -> None:
@@ -76,4 +63,4 @@ class Runtime:
             return
         job = self.tasker.post_stop().wait()
         if not job.succeeded:
-            raise RuntimeOperationError("MaaFramework tasker stop failed")
+            raise RuntimeError("MaaFramework tasker stop failed")
