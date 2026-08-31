@@ -10,7 +10,7 @@ The MVP intentionally keeps the public surface small:
 
 - `Template` / `OCR` — describe how to match UI elements.
 - `MatchResult` — thin wrapper around MaaFramework `RecognitionDetail`, adding truthiness and `click()`.
-- `FlowContext` — shared screenshot plus `match()`.
+- `FlowContext` — shared screenshot plus `match()` and gesture coordination.
 - `Runtime` — thin MaaFramework adapter.
 - `Runner` — binds the runtime and executes a plain Python flow function.
 
@@ -65,10 +65,11 @@ For example, template score or OCR text can be read from `best_result` according
 
 ## Click point resolver
 
-`click()` uses the center of the matched box by default:
+`click()` uses the center of the matched box by default and holds for 50 ms:
 
 ```python
 ctx.match(Login.START).click()
+ctx.match(Login.START).click(duration=120)
 ```
 
 A custom click algorithm is just a function from `MatchResult` to `(x, y)`:
@@ -87,12 +88,51 @@ def random_point(result: MatchResult) -> tuple[int, int]:
     )
 
 
-ctx.match(Login.START).click(random_point)
+ctx.match(Login.START).click(random_point, duration=80)
 ```
 
 The resolver receives the whole `MatchResult`, so it may also use `result.detail` for recognition-specific positioning. MaaPlus does not define a strategy class hierarchy; custom positioning stays ordinary Python.
 
 `click()` returns `False` when recognition missed. With the default resolver it also returns `False` when no matched box exists.
+
+## Runtime gestures
+
+Gesture durations are milliseconds.
+
+`Runtime.click(point, duration)` is defined as one continuous press:
+
+```text
+touch_down(point)
+    ↓ hold for duration
+touch_up()
+```
+
+`Runtime.swipe(points, duration)` follows the supplied path:
+
+```text
+touch_down(points[0])
+    ↓
+touch_move(points[1])
+    ↓
+touch_move(points[2])
+    ↓
+...
+    ↓
+touch_move(points[-1])
+    ↓
+touch_up()
+```
+
+The total duration is divided evenly across the `len(points) - 1` path intervals. A swipe requires at least two points.
+
+Flows normally use `FlowContext.swipe()` so the shared screenshot is invalidated after the gesture:
+
+```python
+ctx.swipe(
+    [(200, 800), (220, 650), (260, 500), (300, 350)],
+    duration=400,
+)
+```
 
 ## Running a flow
 
@@ -144,13 +184,13 @@ ctx.match(B) -> new screenshot
 ```text
 Flow function
     ↓
-FlowContext.match()
+FlowContext.match() / swipe()
     ↓
 Locator → MatchResult
     ↓
-Runtime
+Runtime click/swipe
     ↓
-MaaFramework
+MaaFramework touch events
 ```
 
 The rule is simple: MaaPlus should delete boilerplate, not create a second automation framework.
