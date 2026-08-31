@@ -2,22 +2,22 @@ from __future__ import annotations
 
 import unittest
 
-from maaplus import Flow, FlowContext, MatchResult, Runner, Template
+from maaplus import FlowContext, Match, Runner, Template
 
 
 class FakeRuntime:
     def __init__(self) -> None:
         self.frames = 0
         self.clicks: list[tuple[int, int, int, int]] = []
-        self.hits: dict[object, MatchResult] = {}
+        self.hits: dict[object, Match] = {}
         self.stopped = False
 
     def screenshot(self) -> object:
         self.frames += 1
         return object()
 
-    def recognize(self, locator, frame) -> MatchResult:
-        return self.hits.get(locator, MatchResult(locator=locator, hit=False))
+    def recognize(self, locator, frame) -> Match:
+        return self.hits.get(locator, Match(False))
 
     def click(self, box) -> bool:
         self.clicks.append(box)
@@ -32,8 +32,8 @@ class FlowContextTests(unittest.TestCase):
         runtime = FakeRuntime()
         first = Template("first.png")
         second = Template("second.png")
-        runtime.hits[first] = MatchResult(first, True, (10, 20, 30, 40), 0.95)
-        runtime.hits[second] = MatchResult(second, True, (50, 60, 20, 20), 0.90)
+        runtime.hits[first] = Match(True, (10, 20, 30, 40), 0.95)
+        runtime.hits[second] = Match(True, (50, 60, 20, 20), 0.90)
         ctx = FlowContext(runtime)
 
         self.assertTrue(ctx.find(first))
@@ -48,16 +48,15 @@ class FlowContextTests(unittest.TestCase):
 
     def test_click_on_miss_is_false(self) -> None:
         runtime = FakeRuntime()
-        locator = Template("missing.png")
         ctx = FlowContext(runtime)
 
-        self.assertFalse(ctx.find(locator).click())
+        self.assertFalse(ctx.find(Template("missing.png")).click())
         self.assertEqual(runtime.clicks, [])
 
     def test_click_without_box_is_false(self) -> None:
         runtime = FakeRuntime()
         locator = Template("no-box.png")
-        runtime.hits[locator] = MatchResult(locator, True, None, 0.95)
+        runtime.hits[locator] = Match(True)
         ctx = FlowContext(runtime)
 
         self.assertFalse(ctx.find(locator).click())
@@ -68,13 +67,12 @@ class RunnerTests(unittest.TestCase):
     def test_runner_executes_flow_and_can_stop(self) -> None:
         runtime = FakeRuntime()
 
-        class ExampleFlow(Flow):
-            def run(self, ctx: FlowContext) -> str:
-                ctx.screenshot()
-                return "ok"
+        def flow(ctx: FlowContext) -> str:
+            ctx.screenshot()
+            return "ok"
 
         runner = Runner(runtime)
-        self.assertEqual(runner.run(ExampleFlow()), "ok")
+        self.assertEqual(runner.run(flow), "ok")
         runner.stop()
         self.assertTrue(runtime.stopped)
 
