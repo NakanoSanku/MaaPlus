@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from .locator import Locator, Rect
-from .result import Match
+from .match import Match
 
 
 class FlowContext:
