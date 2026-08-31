@@ -10,7 +10,7 @@ MaaFramework keeps responsibility for recognition, resources, controllers, and n
 - `OCR` — alias of MaaFramework `JOCR`.
 - `MatchResult` — thin wrapper around MaaFramework `RecognitionDetail`, adding truthiness and `click()`.
 - `Runtime` — screenshot, match, click, and swipe primitives over MaaFramework.
-- `Runner` — owns flow ticks, the continuous run loop, stop state, and MaaFramework lifecycle.
+- `Runner` — owns flow ticks, the continuous run loop, pause/resume/stop state, and MaaFramework lifecycle.
 
 There is no MaaPlus locator schema. `Runtime.match()` accepts MaaFramework `JRecognitionParam` directly, so MaaFramework recognition features are not copied or restricted by MaaPlus.
 
@@ -156,9 +156,59 @@ An optional tick interval is expressed in milliseconds:
 runner.run(login, interval=100)
 ```
 
-`Runner.stop()` requests the loop to stop and also forwards stop to the MaaFramework runtime. The interval wait is interruptible by `stop()`.
+### Pause and resume
 
-`Runner.running` reports whether the continuous run loop is active. Re-entering `run()` while it is already running raises `RuntimeError`.
+`pause()` pauses the continuous `run()` loop before the next tick:
+
+```python
+runner.pause()
+runner.resume()
+```
+
+Pause never interrupts the current tick. If a pause is requested while the flow is still matching or performing an action, that tick finishes normally. Runner then waits before capturing the next screenshot:
+
+```text
+tick #12
+screenshot
+   ↓
+flow(runtime, image)
+   │
+   │ pause()
+   ↓
+current tick finishes
+   ↓
+PAUSED              # no new screenshot
+   │
+   │ resume()
+   ↓
+next tick
+fresh screenshot
+```
+
+`Runner.running` stays `True` while paused because the run lifecycle is still active. `Runner.paused` reports whether that lifecycle is currently paused.
+
+Calling `pause()` or `resume()` while Runner is idle is a no-op. `tick()` remains an explicit one-shot operation and is not controlled by the pause flag.
+
+If a pause occurs while Runner is waiting for `interval`, the interval is restarted in full after `resume()`. This keeps timing semantics simple and avoids maintaining partial interval state.
+
+### Stop and lifecycle
+
+`Runner.stop()` requests the loop to stop and also forwards stop to the MaaFramework runtime. It wakes both paused waits and interval waits immediately, so a paused Runner can always be stopped cleanly.
+
+The lifecycle states are intentionally simple:
+
+```text
+IDLE
+  │ run()
+  ▼
+RUNNING ── pause() ──→ PAUSED
+  ▲                     │
+  └────── resume() ─────┘
+
+RUNNING / PAUSED ── stop() or flow=False ──→ IDLE
+```
+
+Re-entering `run()` while it is already running raises `RuntimeError`.
 
 Runner also supports context-manager cleanup:
 
@@ -282,9 +332,9 @@ See `examples/basic_adb.py` for a complete ADB example.
 
 ```text
                     Runner
-          tick lifecycle / run loop
+       tick / run / pause / resume / stop
                        │
-             fresh screenshot
+             fresh screenshot per tick
                        ↓
           Business flow(runtime, image)
                        │
