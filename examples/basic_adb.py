@@ -31,22 +31,26 @@ class Login:
     )
 
 
-def login_flow(runtime: Runtime, image) -> None:
-    # Every match in this run uses exactly the same screenshot.
+def login_flow(runtime: Runtime, image) -> bool:
+    # Every match in this tick uses exactly the same screenshot.
     close = runtime.match(Login.CLOSE_NOTICE, image)
     if close:
         close.click()
-        return
+        return True  # evaluate the resulting UI with a fresh screenshot
 
     start = runtime.match(Login.START, image)
     if start:
         print(f"START matched: box={start.box}")
         start.click()
-        return
+        return True
 
     confirm = runtime.match(Login.CONFIRM, image)
     if confirm:
         confirm.click()
+        return False  # flow complete
+
+    print("No known login state matched")
+    return False
 
 
 def create_adb_controller() -> AdbController:
@@ -81,17 +85,12 @@ def main() -> None:
     DEBUG_DIR.mkdir(parents=True, exist_ok=True)
     Toolkit.init_option(str(DEBUG_DIR))
 
-    runner = Runner.from_maa(
+    with Runner.from_maa(
         tasker=Tasker(),
         controller=create_adb_controller(),
         resource=load_resource(),
-    )
-
-    try:
-        # Each run is one fresh-screen decision tick.
-        runner.run(login_flow)
-    finally:
-        runner.stop()
+    ) as runner:
+        runner.run(login_flow, interval=100)
 
 
 if __name__ == "__main__":
