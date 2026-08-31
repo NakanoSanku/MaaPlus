@@ -7,7 +7,7 @@ from maa.resource import Resource
 from maa.tasker import Tasker
 from maa.toolkit import Toolkit
 
-from maaplus import Flow, FlowContext, OCR, Runner, Template
+from maaplus import FlowContext, OCR, Runner, Template
 
 
 ROOT = Path(__file__).resolve().parent
@@ -16,38 +16,27 @@ DEBUG_DIR = ROOT / ".debug"
 
 
 class Login:
-    """Locators only describe how UI elements are recognized."""
-
-    # Template paths are relative to RESOURCE_DIR / "image".
     START = Template("login/start.png", threshold=0.85)
-
-    # UI that may or may not appear.
     CLOSE_NOTICE = OCR(("关闭", "跳过"), roi=(900, 0, 380, 240))
     CONFIRM = OCR("确认", roi=(400, 350, 480, 360))
 
 
-class LoginFlow(Flow):
-    """Business decisions live here; no MaaFramework calls are needed."""
+def login_flow(ctx: FlowContext) -> None:
+    ctx.find(Login.CLOSE_NOTICE).click()
 
-    def run(self, ctx: FlowContext) -> None:
-        # Misses are simply False/no-op. A successful click invalidates the frame.
-        ctx.find(Login.CLOSE_NOTICE).click()
+    start = ctx.find(Login.START)
+    if not start:
+        print("START not found")
+        return
 
-        start = ctx.find(Login.START)
-        if not start:
-            print("START not found")
-            return
+    print(f"START matched: box={start.box}, score={start.score}")
+    start.click()
 
-        print(f"START matched: box={start.box}, score={start.score}")
-        start.click()
-
-        # start.click() changed the UI, so this find() automatically captures a fresh frame.
-        ctx.find(Login.CONFIRM).click()
+    # The successful click invalidated the shared frame, so this find captures a new one.
+    ctx.find(Login.CONFIRM).click()
 
 
 def create_adb_controller() -> AdbController:
-    """Keep environment-specific controller setup outside MaaPlus flows."""
-
     devices = Toolkit.find_adb_devices()
     if not devices:
         raise RuntimeError("No ADB device found")
@@ -64,7 +53,6 @@ def create_adb_controller() -> AdbController:
     job = controller.post_connection().wait()
     if not job.succeeded:
         raise RuntimeError(f"Failed to connect ADB device: {device.address}")
-
     return controller
 
 
@@ -80,18 +68,14 @@ def main() -> None:
     DEBUG_DIR.mkdir(parents=True, exist_ok=True)
     Toolkit.init_option(str(DEBUG_DIR))
 
-    controller = create_adb_controller()
-    resource = load_resource()
-    tasker = Tasker()
-
     runner = Runner.from_maa(
-        tasker=tasker,
-        controller=controller,
-        resource=resource,
+        tasker=Tasker(),
+        controller=create_adb_controller(),
+        resource=load_resource(),
     )
 
     try:
-        runner.run(LoginFlow())
+        runner.run(login_flow)
     finally:
         runner.stop()
 
