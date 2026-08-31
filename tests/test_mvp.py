@@ -5,7 +5,7 @@ from threading import Event, Thread
 from types import SimpleNamespace
 
 from maa.pipeline import JOCR, JFeatureMatch, JRecognitionType, JTemplateMatch
-from maaplus import MatchResult, OCR, Runner, Runtime, Template
+from maaplus import MatchResult, OCR, Runtime, Scheduler, Task, Template
 
 
 def make_match(hit: bool, box=None, click=None) -> MatchResult:
@@ -146,7 +146,7 @@ class FlowSnapshotTests(unittest.TestCase):
         second = Template(template=["second.png"])
         runtime.hits[id(first)] = (True, (10, 20, 30, 40))
         runtime.hits[id(second)] = (True, (50, 60, 20, 20))
-        runner = Runner(runtime)
+        scheduler = Scheduler(runtime)
         seen_image = None
 
         def flow(rt, image) -> bool:
@@ -156,14 +156,12 @@ class FlowSnapshotTests(unittest.TestCase):
             second_result = rt.match(second, image)
             self.assertTrue(first_result)
             self.assertTrue(second_result)
-
             first_result.click()
-
-            # Actions do not replace the current tick snapshot.
             rt.match(second, image)
             return False
 
-        self.assertFalse(runner.tick(flow))
+        task = Task("snapshot", flow)
+        self.assertFalse(scheduler.tick(task))
         self.assertEqual(runtime.frames, 1)
         self.assertTrue(all(image is seen_image for _, image in runtime.matches))
         self.assertEqual(runtime.clicks, [((25, 40), 50)])
@@ -219,27 +217,103 @@ class RuntimeGestureTests(unittest.TestCase):
             runtime.swipe([(0, 0)], 100)
 
 
-class RunnerTests(unittest.TestCase):
-    def test_run_captures_a_new_screenshot_each_tick_until_false(self) -> None:
+class SchedulerTests(unittest.TestCase):
+    def test_highest_priority_ready_task_runs_first(self) -> None:
         runtime = FakeRuntime()
-        runner = Runner(runtime)
-        images: list[object] = []
+        scheduler = Scheduler(runtime)
+        order: list[str] = []
 
-        def flow(rt, image) -> bool:
-            self.assertTrue(runner.running)
-            images.append(image)
-            return len(images) < 3
+        scheduler.submit(Task("low", lambda rt, image: order.append("low") or False, priority=10))
+        scheduler.submit(Task("high", lambda rt, image: order.append("high") or False, priority=100))
+        scheduler.run()
 
-        runner.run(flow)
+        self.assertEqual(order, ["high", "low"])
+        self.assertEqual(runtime.frames, 2)
 
+    def test_higher_priority_task_preempts_at_tick_boundary_and_resumes(self) -> None:
+        runtime = FakeRuntime()
+        scheduler = Scheduler(runtime)
+        order: list[str] = []
+        low_ticks = 0
+
+        high = Task("high", lambda rt, image: order.append("high") or False, priority=100)
+
+        def low_flow(rt, image) -> bool:
+            nonlocal low_ticks
+            low_ticks += 1
+            order.append(f"low-{low_ticks}")
+            if low_ticks == 1:
+                scheduler.submit(high)
+                return True
+            return False
+
+        low = Task("low", low_flow, priority=10)
+        scheduler.submit(low)
+        scheduler.run()
+
+        self.assertEqual(order, ["low-1", "high", "low-2"])
         self.assertEqual(runtime.frames, 3)
-        self.assertEqual(len({id(image) for image in images}), 3)
-        self.assertFalse(runner.running)
-        self.assertFalse(runner.paused)
+        self.assertIsNone(scheduler.current)
+
+    def test_due_scheduled_task_preempts_current_task(self) -> None:
+        runtime = FakeRuntime()
+        scheduler = Scheduler(runtime)
+        order: list[str] = []
+        normal_ticks = 0
+
+        timed = Task("timed", lambda rt, image: order.append("timed") or False, priority=100)
+
+        def normal_flow(rt, image) -> bool:
+            nonlocal normal_ticks
+            normal_ticks += 1
+            order.append(f"normal-{normal_ticks}")
+            if normal_ticks == 1:
+                scheduler.schedule(timed, delay=0)
+                return True
+            return False
+
+        scheduler.submit(Task("normal", normal_flow, priority=10))
+        scheduler.run()
+
+        self.assertEqual(order, ["normal-1", "timed", "normal-2"])
+
+    def test_equal_or_lower_priority_does_not_preempt_current_task(self) -> None:
+        runtime = FakeRuntime()
+        scheduler = Scheduler(runtime)
+        order: list[str] = []
+        primary_ticks = 0
+
+        equal = Task("equal", lambda rt, image: order.append("equal") or False, priority=10)
+
+        def primary_flow(rt, image) -> bool:
+            nonlocal primary_ticks
+            primary_ticks += 1
+            order.append(f"primary-{primary_ticks}")
+            if primary_ticks == 1:
+                scheduler.submit(equal)
+                return True
+            return False
+
+        scheduler.submit(Task("primary", primary_flow, priority=10))
+        scheduler.run()
+
+        self.assertEqual(order, ["primary-1", "primary-2", "equal"])
+
+    def test_future_scheduled_task_keeps_scheduler_alive_until_due(self) -> None:
+        runtime = FakeRuntime()
+        scheduler = Scheduler(runtime)
+        ran = Event()
+        task = Task("future", lambda rt, image: ran.set() or False, priority=10)
+
+        scheduler.schedule(task, delay=10)
+        scheduler.run()
+
+        self.assertTrue(ran.is_set())
+        self.assertEqual(runtime.frames, 1)
 
     def test_pause_blocks_before_next_tick_and_resume_continues(self) -> None:
         runtime = FakeRuntime()
-        runner = Runner(runtime)
+        scheduler = Scheduler(runtime)
         pause_requested = Event()
         ticks = 0
 
@@ -247,121 +321,98 @@ class RunnerTests(unittest.TestCase):
             nonlocal ticks
             ticks += 1
             if ticks == 1:
-                runner.pause()
+                scheduler.pause()
                 pause_requested.set()
                 return True
             return False
 
-        thread = Thread(target=runner.run, args=(flow,), daemon=True)
+        scheduler.submit(Task("pause", flow))
+        thread = Thread(target=scheduler.run, daemon=True)
         thread.start()
 
         self.assertTrue(pause_requested.wait(1))
-        self.assertTrue(runner.running)
-        self.assertTrue(runner.paused)
+        self.assertTrue(scheduler.running)
+        self.assertTrue(scheduler.paused)
         self.assertEqual(runtime.frames, 1)
-        self.assertTrue(thread.is_alive())
 
-        runner.resume()
+        scheduler.resume()
         thread.join(1)
 
         self.assertFalse(thread.is_alive())
         self.assertEqual(ticks, 2)
         self.assertEqual(runtime.frames, 2)
-        self.assertFalse(runner.running)
-        self.assertFalse(runner.paused)
+        self.assertFalse(scheduler.running)
+        self.assertFalse(scheduler.paused)
 
     def test_stop_exits_while_paused(self) -> None:
         runtime = FakeRuntime()
-        runner = Runner(runtime)
+        scheduler = Scheduler(runtime)
         pause_requested = Event()
 
         def flow(rt, image) -> bool:
-            runner.pause()
+            scheduler.pause()
             pause_requested.set()
             return True
 
-        thread = Thread(target=runner.run, args=(flow,), daemon=True)
+        scheduler.submit(Task("pause", flow))
+        thread = Thread(target=scheduler.run, daemon=True)
         thread.start()
 
         self.assertTrue(pause_requested.wait(1))
-        self.assertTrue(runner.paused)
-
-        runner.stop()
+        scheduler.stop()
         thread.join(1)
 
         self.assertFalse(thread.is_alive())
         self.assertEqual(runtime.frames, 1)
         self.assertTrue(runtime.stopped)
-        self.assertFalse(runner.running)
-        self.assertFalse(runner.paused)
-
-    def test_pause_and_resume_are_noops_when_idle(self) -> None:
-        runner = Runner(FakeRuntime())
-
-        runner.pause()
-        self.assertFalse(runner.paused)
-
-        runner.resume()
-        self.assertFalse(runner.paused)
-
-    def test_stop_requests_loop_exit_and_stops_runtime(self) -> None:
-        runtime = FakeRuntime()
-        runner = Runner(runtime)
-        ticks = 0
-
-        def flow(rt, image) -> bool:
-            nonlocal ticks
-            ticks += 1
-            if ticks == 2:
-                runner.stop()
-            return True
-
-        runner.run(flow)
-
-        self.assertEqual(ticks, 2)
-        self.assertTrue(runtime.stopped)
-        self.assertFalse(runner.running)
+        self.assertFalse(scheduler.running)
+        self.assertFalse(scheduler.paused)
 
     def test_stop_interrupts_interval_wait(self) -> None:
         runtime = FakeRuntime()
-        runner = Runner(runtime)
+        scheduler = Scheduler(runtime)
         first_tick = Event()
 
         def flow(rt, image) -> bool:
             first_tick.set()
             return True
 
-        thread = Thread(target=runner.run, args=(flow,), kwargs={"interval": 60_000}, daemon=True)
+        scheduler.submit(Task("loop", flow))
+        thread = Thread(target=scheduler.run, kwargs={"interval": 60_000}, daemon=True)
         thread.start()
 
         self.assertTrue(first_tick.wait(1))
-        runner.stop()
+        scheduler.stop()
         thread.join(1)
 
         self.assertFalse(thread.is_alive())
         self.assertEqual(runtime.frames, 1)
 
-    def test_run_rejects_negative_interval(self) -> None:
-        runner = Runner(FakeRuntime())
+    def test_invalid_delay_and_interval_are_rejected(self) -> None:
+        scheduler = Scheduler(FakeRuntime())
+        task = Task("noop", lambda rt, image: False)
 
         with self.assertRaises(ValueError):
-            runner.run(lambda rt, image: False, interval=-1)
+            scheduler.schedule(task, delay=-1)
+        with self.assertRaises(ValueError):
+            scheduler.run(interval=-1)
 
-    def test_runner_rejects_reentrant_run(self) -> None:
-        runner = Runner(FakeRuntime())
+    def test_scheduler_rejects_reentrant_run(self) -> None:
+        scheduler = Scheduler(FakeRuntime())
 
         def flow(rt, image) -> bool:
             with self.assertRaises(RuntimeError):
-                runner.run(lambda nested_rt, nested_image: False)
+                scheduler.run()
             return False
 
-        runner.run(flow)
+        scheduler.submit(Task("reentrant", flow))
+        scheduler.run()
 
     def test_context_manager_stops_runtime(self) -> None:
         runtime = FakeRuntime()
 
-        with Runner(runtime) as runner:
-            self.assertIs(runner.runtime, runtime)
+        with Scheduler(runtime) as scheduler:
+            self.assertIs(scheduler.runtime, runtime)
 
         self.assertTrue(runtime.stopped)
 
