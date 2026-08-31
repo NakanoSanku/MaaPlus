@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from threading import Event, Thread
 from types import SimpleNamespace
 
 from maa.pipeline import JOCR, JFeatureMatch, JRecognitionType, JTemplateMatch
@@ -234,6 +235,74 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(runtime.frames, 3)
         self.assertEqual(len({id(image) for image in images}), 3)
         self.assertFalse(runner.running)
+        self.assertFalse(runner.paused)
+
+    def test_pause_blocks_before_next_tick_and_resume_continues(self) -> None:
+        runtime = FakeRuntime()
+        runner = Runner(runtime)
+        pause_requested = Event()
+        ticks = 0
+
+        def flow(rt, image) -> bool:
+            nonlocal ticks
+            ticks += 1
+            if ticks == 1:
+                runner.pause()
+                pause_requested.set()
+                return True
+            return False
+
+        thread = Thread(target=runner.run, args=(flow,), daemon=True)
+        thread.start()
+
+        self.assertTrue(pause_requested.wait(1))
+        self.assertTrue(runner.running)
+        self.assertTrue(runner.paused)
+        self.assertEqual(runtime.frames, 1)
+        self.assertTrue(thread.is_alive())
+
+        runner.resume()
+        thread.join(1)
+
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(ticks, 2)
+        self.assertEqual(runtime.frames, 2)
+        self.assertFalse(runner.running)
+        self.assertFalse(runner.paused)
+
+    def test_stop_exits_while_paused(self) -> None:
+        runtime = FakeRuntime()
+        runner = Runner(runtime)
+        pause_requested = Event()
+
+        def flow(rt, image) -> bool:
+            runner.pause()
+            pause_requested.set()
+            return True
+
+        thread = Thread(target=runner.run, args=(flow,), daemon=True)
+        thread.start()
+
+        self.assertTrue(pause_requested.wait(1))
+        self.assertTrue(runner.paused)
+
+        runner.stop()
+        thread.join(1)
+
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(runtime.frames, 1)
+        self.assertTrue(runtime.stopped)
+        self.assertFalse(runner.running)
+        self.assertFalse(runner.paused)
+
+    def test_pause_and_resume_are_noops_when_idle(self) -> None:
+        runner = Runner(FakeRuntime())
+
+        runner.pause()
+        self.assertFalse(runner.paused)
+
+        runner.resume()
+        self.assertFalse(runner.paused)
 
     def test_stop_requests_loop_exit_and_stops_runtime(self) -> None:
         runtime = FakeRuntime()
@@ -252,6 +321,25 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(ticks, 2)
         self.assertTrue(runtime.stopped)
         self.assertFalse(runner.running)
+
+    def test_stop_interrupts_interval_wait(self) -> None:
+        runtime = FakeRuntime()
+        runner = Runner(runtime)
+        first_tick = Event()
+
+        def flow(rt, image) -> bool:
+            first_tick.set()
+            return True
+
+        thread = Thread(target=runner.run, args=(flow,), kwargs={"interval": 60_000}, daemon=True)
+        thread.start()
+
+        self.assertTrue(first_tick.wait(1))
+        runner.stop()
+        thread.join(1)
+
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(runtime.frames, 1)
 
     def test_run_rejects_negative_interval(self) -> None:
         runner = Runner(FakeRuntime())
