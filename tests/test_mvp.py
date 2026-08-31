@@ -3,34 +3,35 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from maaplus import FlowContext, MatchResult, Runner, Runtime, Template
+from maaplus import MatchResult, Runner, Runtime, Template
 
 
-def make_match(hit: bool, box=None) -> MatchResult:
-    return MatchResult(SimpleNamespace(hit=hit, box=box))
+def make_match(hit: bool, box=None, click=None) -> MatchResult:
+    return MatchResult(SimpleNamespace(hit=hit, box=box), click)
 
 
 class FakeRuntime:
     def __init__(self) -> None:
         self.frames = 0
+        self.matches: list[tuple[object, object]] = []
         self.clicks: list[tuple[tuple[int, int], int]] = []
-        self.swipes: list[tuple[tuple[tuple[int, int], ...], int]] = []
-        self.hits: dict[object, MatchResult] = {}
+        self.hits: dict[object, tuple[bool, object]] = {}
         self.stopped = False
 
     def screenshot(self) -> object:
         self.frames += 1
         return object()
 
-    def recognize(self, locator, frame) -> MatchResult:
-        return self.hits.get(locator, make_match(False))
+    def match(self, locator, image) -> MatchResult:
+        self.matches.append((locator, image))
+        hit, box = self.hits.get(locator, (False, None))
+        return make_match(hit, box, self.click)
 
-    def click(self, point, duration) -> bool:
+    def click(self, point, duration=50) -> bool:
         self.clicks.append((point, duration))
         return True
 
     def swipe(self, points, duration) -> bool:
-        self.swipes.append((tuple(points), duration))
         return True
 
     def stop(self) -> None:
@@ -61,69 +62,50 @@ class FakeController:
         return FakeJob()
 
 
-class FlowContextTests(unittest.TestCase):
-    def test_match_calls_share_one_frame_until_action(self) -> None:
+class FlowSnapshotTests(unittest.TestCase):
+    def test_one_flow_run_uses_one_screenshot(self) -> None:
         runtime = FakeRuntime()
         first = Template("first.png")
         second = Template("second.png")
-        runtime.hits[first] = make_match(True, (10, 20, 30, 40))
-        runtime.hits[second] = make_match(True, (50, 60, 20, 20))
-        ctx = FlowContext(runtime)
+        runtime.hits[first] = (True, (10, 20, 30, 40))
+        runtime.hits[second] = (True, (50, 60, 20, 20))
+        runner = Runner(runtime)
 
-        self.assertTrue(ctx.match(first))
-        self.assertTrue(ctx.match(second))
+        def flow(rt, image):
+            first_result = rt.match(first, image)
+            second_result = rt.match(second, image)
+            self.assertTrue(first_result)
+            self.assertTrue(second_result)
+
+            first_result.click()
+
+            # Actions do not replace the current flow snapshot.
+            rt.match(second, image)
+            return image
+
+        first_image = runner.run(flow)
         self.assertEqual(runtime.frames, 1)
-
-        self.assertTrue(ctx.match(first).click())
+        self.assertTrue(all(image is first_image for _, image in runtime.matches))
         self.assertEqual(runtime.clicks, [((25, 40), 50)])
 
-        self.assertTrue(ctx.match(second))
+        runtime.matches.clear()
+        second_image = runner.run(flow)
         self.assertEqual(runtime.frames, 2)
+        self.assertIsNot(first_image, second_image)
+        self.assertTrue(all(image is second_image for _, image in runtime.matches))
 
-    def test_click_supports_custom_point_resolver_and_duration(self) -> None:
+    def test_custom_click_resolver_and_duration(self) -> None:
         runtime = FakeRuntime()
         locator = Template("button.png")
-        runtime.hits[locator] = make_match(True, (10, 20, 30, 40))
-        ctx = FlowContext(runtime)
+        runtime.hits[locator] = (True, (10, 20, 30, 40))
+        image = runtime.screenshot()
 
         def bottom_right(result: MatchResult) -> tuple[int, int]:
             x, y, width, height = result.box
             return x + width - 1, y + height - 1
 
-        self.assertTrue(ctx.match(locator).click(bottom_right, duration=120))
+        self.assertTrue(runtime.match(locator, image).click(bottom_right, duration=120))
         self.assertEqual(runtime.clicks, [((39, 59), 120)])
-
-    def test_swipe_invalidates_shared_frame(self) -> None:
-        runtime = FakeRuntime()
-        locator = Template("button.png")
-        runtime.hits[locator] = make_match(True, (0, 0, 10, 10))
-        ctx = FlowContext(runtime)
-
-        self.assertTrue(ctx.match(locator))
-        self.assertEqual(runtime.frames, 1)
-
-        path = [(10, 10), (20, 20), (30, 15)]
-        self.assertTrue(ctx.swipe(path, 300))
-        self.assertEqual(runtime.swipes, [(tuple(path), 300)])
-
-        self.assertTrue(ctx.match(locator))
-        self.assertEqual(runtime.frames, 2)
-
-    def test_click_on_miss_is_false(self) -> None:
-        runtime = FakeRuntime()
-        ctx = FlowContext(runtime)
-
-        self.assertFalse(ctx.match(Template("missing.png")).click())
-        self.assertEqual(runtime.clicks, [])
-
-    def test_click_without_box_is_false(self) -> None:
-        runtime = FakeRuntime()
-        locator = Template("no-box.png")
-        runtime.hits[locator] = make_match(True)
-        ctx = FlowContext(runtime)
-
-        self.assertFalse(ctx.match(locator).click())
-        self.assertEqual(runtime.clicks, [])
 
     def test_match_result_keeps_original_detail(self) -> None:
         detail = SimpleNamespace(hit=True, box=(1, 2, 3, 4), raw_detail={"foo": "bar"})
@@ -164,15 +146,10 @@ class RuntimeGestureTests(unittest.TestCase):
 
 
 class RunnerTests(unittest.TestCase):
-    def test_runner_executes_flow_and_can_stop(self) -> None:
+    def test_runner_can_stop_runtime(self) -> None:
         runtime = FakeRuntime()
-
-        def flow(ctx: FlowContext) -> str:
-            ctx.screenshot()
-            return "ok"
-
         runner = Runner(runtime)
-        self.assertEqual(runner.run(flow), "ok")
+
         runner.stop()
         self.assertTrue(runtime.stopped)
 
