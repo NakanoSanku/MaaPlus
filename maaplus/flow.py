@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from .locator import Locator, Rect
-from .match import Match
+from .match import MatchResult
 
 
 class FlowContext:
@@ -27,10 +27,10 @@ class FlowContext:
     def invalidate(self) -> None:
         self._frame = None
 
-    def find(self, locator: Locator) -> Match:
-        match = self.runtime.recognize(locator, self.screenshot())
-        match._click = self.click_box
-        return match
+    def match(self, locator: Locator) -> MatchResult:
+        result = self.runtime.recognize(locator, self.screenshot())
+        result._click = self.click_box
+        return result
 
     def click_box(self, box: Rect) -> bool:
         success = self.runtime.click(box)
