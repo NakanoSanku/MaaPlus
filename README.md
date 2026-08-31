@@ -51,13 +51,14 @@ class LoginFlow(Flow):
 Create and connect your MaaFramework `Controller`, load your `Resource`, then hand them to MaaPlus:
 
 ```python
+from maa.resource import Resource
 from maa.tasker import Tasker
 from maaplus import Runner
 
 # controller = ...                       # choose ADB / Win32 / custom controller
 # controller.post_connection().wait()
-# resource = Resource()
-# resource.post_bundle("./resource").wait()
+resource = Resource()
+resource.post_bundle("./resource").wait()
 
 tasker = Tasker()
 runner = Runner.from_maa(
