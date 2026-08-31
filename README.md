@@ -71,6 +71,16 @@ runner.run(LoginFlow())
 
 Controller discovery/creation and resource loading remain explicit MaaFramework concerns in the MVP because their configuration is environment-specific.
 
+## Example
+
+`examples/basic_adb.py` shows the current end-to-end shape using MaaFramework ADB discovery and a MaaPlus `LoginFlow`.
+
+Before running it, place the demo template at `examples/resource/image/login/start.png` and adjust the OCR text/ROIs for the target application.
+
+```bash
+python examples/basic_adb.py
+```
+
 ## Frame semantics
 
 ```text
