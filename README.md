@@ -63,7 +63,36 @@ raw_detail = maa_detail.raw_detail
 
 For example, template score or OCR text can be read from `best_result` according to the MaaFramework recognition type.
 
-`click()` returns `False` when the match missed or has no clickable box.
+## Click point resolver
+
+`click()` uses the center of the matched box by default:
+
+```python
+ctx.match(Login.START).click()
+```
+
+A custom click algorithm is just a function from `MatchResult` to `(x, y)`:
+
+```python
+from random import randrange
+
+from maaplus import MatchResult
+
+
+def random_point(result: MatchResult) -> tuple[int, int]:
+    x, y, width, height = result.box
+    return (
+        randrange(x, x + width),
+        randrange(y, y + height),
+    )
+
+
+ctx.match(Login.START).click(random_point)
+```
+
+The resolver receives the whole `MatchResult`, so it may also use `result.detail` for recognition-specific positioning. MaaPlus does not define a strategy class hierarchy; custom positioning stays ordinary Python.
+
+`click()` returns `False` when recognition missed. With the default resolver it also returns `False` when no matched box exists.
 
 ## Running a flow
 
