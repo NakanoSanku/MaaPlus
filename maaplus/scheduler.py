@@ -159,7 +159,7 @@ class Scheduler:
             self._condition.notify_all()
 
     def stop(self) -> None:
-        """Stop the scheduler loop and MaaFramework work in progress."""
+        """Stop execution without discarding unfinished current or queued tasks."""
         with self._condition:
             self._stop_requested = True
             self._paused = False
