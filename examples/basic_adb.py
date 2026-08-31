@@ -29,7 +29,7 @@ def login_flow(ctx: FlowContext) -> None:
         print("START not found")
         return
 
-    print(f"START matched: box={start.box}, score={start.score}")
+    print(f"START matched: box={start.box}")
     start.click()
 
     # The successful click invalidated the shared frame, so this find captures a new one.
