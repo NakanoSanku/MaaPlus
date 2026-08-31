@@ -1,21 +1,20 @@
 # MaaPlus
 
-MaaPlus is a small code-first enhancement layer on top of [MaaFramework](https://github.com/MaaXYZ/MaaFramework). It keeps MaaFramework responsible for recognition, controller, resource, and native execution, while making Python business flows easier to structure and test.
+MaaPlus is a minimal code-first layer on top of [MaaFramework](https://github.com/MaaXYZ/MaaFramework).
 
-## MVP scope
+MaaFramework keeps responsibility for recognition, resources, controllers, and native execution. MaaPlus only adds a small Python-side structure for locators, shared screenshots, simple match actions, and flow execution.
 
-The first MVP intentionally stays small:
+## Core API
 
-- `Template` / `OCR`: immutable locator descriptions; no screenshots or actions inside locators.
-- `FlowContext`: one shared screenshot for consecutive recognitions.
-- `MatchResult` / `BoundMatch`: pure result data plus minimal chainable actions.
-- `Runtime`: thin synchronous wrapper over MaaFramework direct recognition and controller APIs.
-- `Flow`: business decisions and action order only.
-- `Runner`: flow execution boundary and MaaFramework binding helper.
+The MVP intentionally keeps the public surface small:
 
-A successful action invalidates the shared frame. The next `find()` captures a fresh screenshot automatically.
+- `Template` / `OCR` — describe how to find UI elements.
+- `Match` — recognition result with `hit`, `box`, `score`, `detail`, and `click()`.
+- `FlowContext` — shared screenshot plus `find()`.
+- `Runtime` — thin MaaFramework adapter.
+- `Runner` — binds the runtime and executes a plain Python flow function.
 
-MaaPlus intentionally does not add match-chain flow-control helpers such as `require()` or `wait()`. Whether a match is mandatory, whether a flow should retry, and what to do after a miss are business decisions and stay in `Flow`.
+There is no `Page`, `BaseFlow`, `require()`, `wait()`, retry DSL, state machine, or plugin layer.
 
 ## Installation
 
@@ -27,104 +26,97 @@ uv sync
 
 ## Basic usage
 
-Define locators without business behavior:
-
 ```python
-from maaplus import OCR, Template
+from maaplus import FlowContext, OCR, Template
 
 
 class Login:
     START = Template("login/start.png", threshold=0.85)
     CONFIRM = OCR("确认")
+
+
+def login(ctx: FlowContext) -> None:
+    start = ctx.find(Login.START)
+    if not start:
+        return
+
+    start.click()
+    ctx.find(Login.CONFIRM).click()
 ```
 
-Write a flow using the shared context:
+A miss is simply false:
 
 ```python
-from maaplus import Flow, FlowContext
+match = ctx.find(Login.START)
 
-
-class LoginFlow(Flow):
-    def run(self, ctx: FlowContext) -> None:
-        start = ctx.find(Login.START)
-        if not start:
-            return
-
-        start.click()
-        ctx.find(Login.CONFIRM).click()
+if match:
+    print(match.box, match.score)
 ```
 
-`BoundMatch` is truthy when recognition hits. `click()` returns `False` for a miss or a result without a clickable box, and returns the action result for a matched box.
+`click()` returns `False` when the match missed or has no clickable box.
 
-Create and connect your MaaFramework `Controller`, load your `Resource`, then hand them to MaaPlus:
+## Running a flow
+
+Controller discovery and resource loading remain normal MaaFramework code:
 
 ```python
 from maa.resource import Resource
 from maa.tasker import Tasker
 from maaplus import Runner
 
-# controller = ...                       # choose ADB / Win32 / custom controller
-# controller.post_connection().wait()
 resource = Resource()
 resource.post_bundle("./resource").wait()
 
-tasker = Tasker()
 runner = Runner.from_maa(
-    tasker=tasker,
+    tasker=Tasker(),
     controller=controller,
     resource=resource,
 )
-runner.run(LoginFlow())
+
+runner.run(login)
 ```
 
-Controller discovery/creation and resource loading remain explicit MaaFramework concerns in the MVP because their configuration is environment-specific.
+See `examples/basic_adb.py` for a complete ADB example.
 
-## Example
+## Shared frame semantics
 
-`examples/basic_adb.py` shows the current end-to-end shape using MaaFramework ADB discovery and a MaaPlus `LoginFlow`.
-
-Before running it, place the demo template at `examples/resource/image/login/start.png` and adjust the OCR text/ROIs for the target application.
-
-```bash
-python examples/basic_adb.py
-```
-
-## Frame semantics
+Consecutive finds reuse one screenshot:
 
 ```text
 ctx.find(A) ─┐
-ctx.find(B) ─┼─ use the same screenshot
+ctx.find(B) ─┼─ same screenshot
 ctx.find(C) ─┘
-
-ctx.find(A).click()
-        │
-        └─ invalidate cached screenshot
-
-ctx.find(B)
-        └─ capture a new screenshot
 ```
 
-Use `ctx.refresh()` to force a new frame immediately, or `ctx.invalidate()` to mark the current frame stale.
-
-## Design boundary
+A successful action invalidates it:
 
 ```text
-Flow            business decisions / branching
-  ↓
-FlowContext     shared frame + action coordination
-  ↓
-Locator/Result  recognition description + result data
-  ↓
-Runtime         MaaFramework adapter
-  ↓
-MaaFramework    Resource / Tasker / Controller / Recognition
+ctx.find(A).click()
+        ↓
+frame invalidated
+        ↓
+ctx.find(B) -> new screenshot
 ```
 
-MaaPlus should remain a thin layer. New MaaFramework capabilities should normally be exposed through small adapters rather than reimplemented.
+`ctx.refresh()` can force a new screenshot explicitly.
+
+## Architecture
+
+```text
+Flow function
+    ↓
+FlowContext
+    ↓
+Locator → Match
+    ↓
+Runtime
+    ↓
+MaaFramework
+```
+
+The rule is simple: MaaPlus should delete boilerplate, not create a second automation framework.
 
 ## Tests
-
-The core flow behavior can be tested without loading MaaFramework native libraries:
 
 ```bash
 python -m unittest discover -s tests -v
