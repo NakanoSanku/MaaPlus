@@ -21,7 +21,7 @@ class Login:
     # Template paths are relative to RESOURCE_DIR / "image".
     START = Template("login/start.png", threshold=0.85)
 
-    # Optional UI that may or may not appear.
+    # UI that may or may not appear.
     CLOSE_NOTICE = OCR(("关闭", "跳过"), roi=(900, 0, 380, 240))
     CONFIRM = OCR("确认", roi=(400, 350, 480, 360))
 
@@ -30,17 +30,18 @@ class LoginFlow(Flow):
     """Business decisions live here; no MaaFramework calls are needed."""
 
     def run(self, ctx: FlowContext) -> None:
-        # Optional action: a miss simply returns False.
-        # If it hits, click() invalidates the shared screenshot automatically.
+        # Misses are simply False/no-op. A successful click invalidates the frame.
         ctx.find(Login.CLOSE_NOTICE).click()
 
-        # Required action: require() raises LocatorNotFound when START is absent.
-        start = ctx.find(Login.START).require()
+        start = ctx.find(Login.START)
+        if not start:
+            print("START not found")
+            return
+
         print(f"START matched: box={start.box}, score={start.score}")
         start.click()
 
-        # This find() gets a fresh screenshot because the previous click succeeded.
-        # The confirmation dialog is optional.
+        # start.click() changed the UI, so this find() automatically captures a fresh frame.
         ctx.find(Login.CONFIRM).click()
 
 
