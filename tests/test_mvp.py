@@ -13,7 +13,7 @@ def make_match(hit: bool, box=None) -> MatchResult:
 class FakeRuntime:
     def __init__(self) -> None:
         self.frames = 0
-        self.clicks: list[tuple[int, int, int, int]] = []
+        self.clicks: list[tuple[int, int]] = []
         self.hits: dict[object, MatchResult] = {}
         self.stopped = False
 
@@ -24,8 +24,8 @@ class FakeRuntime:
     def recognize(self, locator, frame) -> MatchResult:
         return self.hits.get(locator, make_match(False))
 
-    def click(self, box) -> bool:
-        self.clicks.append(box)
+    def click(self, point) -> bool:
+        self.clicks.append(point)
         return True
 
     def stop(self) -> None:
@@ -46,10 +46,23 @@ class FlowContextTests(unittest.TestCase):
         self.assertEqual(runtime.frames, 1)
 
         self.assertTrue(ctx.match(first).click())
-        self.assertEqual(runtime.clicks, [(10, 20, 30, 40)])
+        self.assertEqual(runtime.clicks, [(25, 40)])
 
         self.assertTrue(ctx.match(second))
         self.assertEqual(runtime.frames, 2)
+
+    def test_click_supports_custom_point_resolver(self) -> None:
+        runtime = FakeRuntime()
+        locator = Template("button.png")
+        runtime.hits[locator] = make_match(True, (10, 20, 30, 40))
+        ctx = FlowContext(runtime)
+
+        def bottom_right(result: MatchResult) -> tuple[int, int]:
+            x, y, width, height = result.box
+            return x + width - 1, y + height - 1
+
+        self.assertTrue(ctx.match(locator).click(bottom_right))
+        self.assertEqual(runtime.clicks, [(39, 59)])
 
     def test_click_on_miss_is_false(self) -> None:
         runtime = FakeRuntime()
