@@ -8,12 +8,14 @@ The first MVP intentionally stays small:
 
 - `Template` / `OCR`: immutable locator descriptions; no screenshots or actions inside locators.
 - `FlowContext`: one shared screenshot for consecutive recognitions.
-- `MatchResult` / `BoundMatch`: pure result data plus optional chainable actions.
+- `MatchResult` / `BoundMatch`: pure result data plus minimal chainable actions.
 - `Runtime`: thin synchronous wrapper over MaaFramework direct recognition and controller APIs.
 - `Flow`: business decisions and action order only.
 - `Runner`: flow execution boundary and MaaFramework binding helper.
 
 A successful action invalidates the shared frame. The next `find()` captures a fresh screenshot automatically.
+
+MaaPlus intentionally does not add match-chain flow-control helpers such as `require()` or `wait()`. Whether a match is mandatory, whether a flow should retry, and what to do after a miss are business decisions and stay in `Flow`.
 
 ## Installation
 
@@ -44,9 +46,15 @@ from maaplus import Flow, FlowContext
 
 class LoginFlow(Flow):
     def run(self, ctx: FlowContext) -> None:
-        ctx.find(Login.START).require().click()
-        ctx.find(Login.CONFIRM).click()  # optional: returns False when not found
+        start = ctx.find(Login.START)
+        if not start:
+            return
+
+        start.click()
+        ctx.find(Login.CONFIRM).click()
 ```
+
+`BoundMatch` is truthy when recognition hits. `click()` returns `False` for a miss or a result without a clickable box, and returns the action result for a matched box.
 
 Create and connect your MaaFramework `Controller`, load your `Resource`, then hand them to MaaPlus:
 
@@ -101,7 +109,7 @@ Use `ctx.refresh()` to force a new frame immediately, or `ctx.invalidate()` to m
 ## Design boundary
 
 ```text
-Flow            business decisions
+Flow            business decisions / branching
   ↓
 FlowContext     shared frame + action coordination
   ↓
