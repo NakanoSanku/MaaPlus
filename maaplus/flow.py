@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from .locator import Locator, Rect
-from .match import MatchResult
+from .locator import Locator
+from .match import MatchResult, Point
 
 
 class FlowContext:
@@ -29,11 +29,11 @@ class FlowContext:
 
     def match(self, locator: Locator) -> MatchResult:
         result = self.runtime.recognize(locator, self.screenshot())
-        result._click = self.click_box
+        result._click = self.click_point
         return result
 
-    def click_box(self, box: Rect) -> bool:
-        success = self.runtime.click(box)
+    def click_point(self, point: Point) -> bool:
+        success = self.runtime.click(point)
         if success:
             self.invalidate()
         return success
