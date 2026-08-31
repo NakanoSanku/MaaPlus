@@ -1,5 +1,5 @@
 from .locator import Locator, OCR, Rect, Template
-from .match import MatchResult
+from .result import MatchResult
 from .runner import Runner
 from .runtime import Runtime
 
