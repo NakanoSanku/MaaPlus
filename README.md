@@ -134,6 +134,8 @@ Schedule one-shot delayed work in milliseconds with:
 scheduler.schedule(timed, delay=60_000)
 ```
 
+The MVP timed API is deliberately one-shot and delay-based. Wall-clock/cron recurrence can be layered on later without changing `Task` or preemption semantics.
+
 The scheduler waits for already-scheduled future work, and `run()` returns when no current, ready, suspended, or scheduled work remains.
 
 ## Cooperative preemption
