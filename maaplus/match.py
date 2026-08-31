@@ -17,7 +17,7 @@ class MatchResult:
     """MaaFramework recognition result with click sugar."""
 
     detail: RecognitionDetail
-    _click: Callable[[Point], bool] | None = field(default=None, repr=False)
+    _click: Callable[[Point, int], bool] | None = field(default=None, repr=False)
 
     @property
     def hit(self) -> bool:
@@ -30,7 +30,7 @@ class MatchResult:
     def __bool__(self) -> bool:
         return self.hit
 
-    def click(self, resolver: ClickResolver | None = None) -> bool:
+    def click(self, resolver: ClickResolver | None = None, duration: int = 50) -> bool:
         if not self.hit or self._click is None:
             return False
 
@@ -43,4 +43,4 @@ class MatchResult:
         else:
             point = resolver(self)
 
-        return self._click(point)
+        return self._click(point, duration)
