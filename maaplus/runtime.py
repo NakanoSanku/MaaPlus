@@ -20,14 +20,16 @@ class Runtime:
         self.resource = resource
 
     def screenshot(self) -> Any:
+        """Capture a fresh screenshot."""
         job = self.controller.post_screencap().wait()
         if not job.succeeded:
             raise RuntimeError("MaaFramework screencap failed")
         return job.get()
 
-    def recognize(self, locator: Locator, frame: Any) -> MatchResult:
+    def match(self, locator: Locator, image: Any) -> MatchResult:
+        """Match a locator against the explicitly supplied screenshot."""
         recognition_type, params = compile_locator(locator)
-        job = self.tasker.post_recognition(recognition_type, params, frame).wait()
+        job = self.tasker.post_recognition(recognition_type, params, image).wait()
         if not job.succeeded:
             raise RuntimeError(f"MaaFramework recognition failed: {locator!r}")
 
@@ -42,9 +44,10 @@ class Runtime:
         if recognition is None:
             raise RuntimeError("MaaFramework recognition returned no recognition detail")
 
-        return MatchResult(recognition)
+        return MatchResult(recognition, self.click)
 
-    def click(self, point: Point, duration: int) -> bool:
+    def click(self, point: Point, duration: int = 50) -> bool:
+        """Press one point for ``duration`` milliseconds."""
         if duration < 0:
             raise ValueError("duration must be >= 0")
 
@@ -56,6 +59,7 @@ class Runtime:
         return True
 
     def swipe(self, points: Sequence[Point], duration: int) -> bool:
+        """Move through a point path over ``duration`` milliseconds."""
         path = tuple(points)
         if len(path) < 2:
             raise ValueError("swipe requires at least two points")
