@@ -16,9 +16,19 @@ DEBUG_DIR = ROOT / ".debug"
 
 
 class Login:
-    START = Template("login/start.png", threshold=0.85)
-    CLOSE_NOTICE = OCR(("关闭", "跳过"), roi=(900, 0, 380, 240))
-    CONFIRM = OCR("确认", roi=(400, 350, 480, 360))
+    # Template and OCR are aliases of MaaFramework JTemplateMatch / JOCR.
+    START = Template(
+        template=["login/start.png"],
+        threshold=[0.85],
+    )
+    CLOSE_NOTICE = OCR(
+        expected=["关闭", "跳过"],
+        roi=(900, 0, 380, 240),
+    )
+    CONFIRM = OCR(
+        expected=["确认"],
+        roi=(400, 350, 480, 360),
+    )
 
 
 def login_flow(runtime: Runtime, image) -> None:
