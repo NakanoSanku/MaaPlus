@@ -6,7 +6,7 @@ from typing import Any
 
 from ._maa import compile_locator
 from .locator import Locator
-from .match import MatchResult, Point
+from .result import MatchResult, Point
 
 
 class Runtime:
