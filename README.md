@@ -2,19 +2,18 @@
 
 MaaPlus is a minimal code-first layer on top of [MaaFramework](https://github.com/MaaXYZ/MaaFramework).
 
-MaaFramework keeps responsibility for recognition, resources, controllers, and native execution. MaaPlus only adds a small Python-side runtime, match-result sugar, gesture helpers, and snapshot-driven flow execution.
+MaaFramework owns recognition, resources, controllers, and native execution. MaaPlus adds a small synchronous runtime, `MatchResult` action sugar, and a snapshot-driven priority scheduler.
 
 ## Core API
 
 - `Template` — alias of MaaFramework `JTemplateMatch`.
 - `OCR` — alias of MaaFramework `JOCR`.
 - `MatchResult` — thin wrapper around MaaFramework `RecognitionDetail`, adding truthiness and `click()`.
-- `Runtime` — screenshot, match, click, and swipe primitives over MaaFramework.
-- `Runner` — owns flow ticks, the continuous run loop, pause/resume/stop state, and MaaFramework lifecycle.
+- `Runtime` — screenshot, recognition, click, and swipe primitives.
+- `Task` — a named flow plus a priority.
+- `Scheduler` — ready queue, timed queue, cooperative preemption, pause/resume, and lifecycle.
 
-There is no MaaPlus locator schema. `Runtime.match()` accepts MaaFramework `JRecognitionParam` directly, so MaaFramework recognition features are not copied or restricted by MaaPlus.
-
-There is also no `Page`, `FlowContext`, `Session`, `BaseFlow`, `require()`, `wait()`, retry DSL, state machine, or plugin layer.
+There is no MaaPlus recognition schema, page-object layer, retry DSL, task graph, worker pool, or custom state machine.
 
 ## Installation
 
@@ -26,7 +25,7 @@ uv sync
 
 ## Recognition parameters
 
-`Template` and `OCR` are only friendly aliases; they are the MaaFramework classes themselves:
+`Template` and `OCR` are MaaFramework classes directly:
 
 ```python
 from maa.pipeline import JOCR, JTemplateMatch
@@ -53,18 +52,9 @@ class Login:
     )
 ```
 
-Because MaaPlus does not rebuild these dataclasses, MaaFramework fields such as `roi_offset`, `replace`, and `color_filter` stay available automatically.
+`Runtime.match()` accepts MaaFramework `JRecognitionParam` directly, so MaaPlus does not rebuild or restrict recognition parameters.
 
-`Runtime.match()` accepts the complete MaaFramework `JRecognitionParam` family. Less-common recognition types can be imported directly from MaaFramework:
-
-```python
-from maa.pipeline import JFeatureMatch
-
-feature = JFeatureMatch(template=["feature.png"])
-result = runtime.match(feature, image)
-```
-
-## Flow semantics
+## Flow / tick semantics
 
 A flow is an ordinary Python callable:
 
@@ -72,24 +62,24 @@ A flow is an ordinary Python callable:
 flow(runtime, image) -> bool
 ```
 
-One **tick** always means one fresh screenshot and one flow call:
+One task **tick** always means one fresh screenshot and one flow call:
 
 ```text
-Runner.tick(flow)
-      ↓
+Scheduler.tick(task)
+        ↓
 Runtime.screenshot()   # exactly once
-      ↓
-flow(runtime, image)
-      ↓
-all match(..., image) calls use that same image
+        ↓
+task.flow(runtime, image)
+        ↓
+all match(..., image) calls use the same snapshot
 ```
 
-Actions do not replace the image inside the current tick. The flow returns:
+The flow returns:
 
-- `True` — run another tick with a fresh screenshot.
-- `False` — the flow is complete.
+- `True` — this task still has work and may need another tick later.
+- `False` — this task is complete.
 
-Example:
+Actions never replace the image inside the current tick. New UI state is evaluated only on a later tick with a fresh screenshot.
 
 ```python
 from maaplus import OCR, Runtime, Template
@@ -115,117 +105,132 @@ def login(runtime: Runtime, image) -> bool:
     confirm = runtime.match(Login.CONFIRM, image)
     if confirm:
         confirm.click()
-        return False
 
     return False
 ```
 
-The flow itself still owns all business decisions. The boolean only tells `Runner` whether another screenshot-driven tick is needed.
+## Tasks and priorities
 
-## Runner
-
-Use `tick()` when the caller wants exactly one snapshot decision:
+A task only describes **what should run** and its scheduling priority:
 
 ```python
-continue_running = runner.tick(login)
+from maaplus import Task
+
+normal = Task("daily", daily_flow, priority=10)
+timed = Task("timed-event", timed_event_flow, priority=100)
 ```
 
-Use `run()` when `Runner` should keep producing fresh ticks until the flow returns `False` or `stop()` is called:
+Higher numeric priority wins.
+
+Submit immediate work with:
 
 ```python
-runner.run(login)
+scheduler.submit(normal)
 ```
 
-Execution looks like:
+Schedule one-shot delayed work in milliseconds with:
+
+```python
+scheduler.schedule(timed, delay=60_000)
+```
+
+The scheduler waits for already-scheduled future work, and `run()` returns when no current, ready, suspended, or scheduled work remains.
+
+## Cooperative preemption
+
+Preemption happens **only between ticks**. MaaPlus never interrupts a recognition call, click, swipe, or flow function in the middle.
 
 ```text
-run(flow)
-   ↓
- screenshot #1 → flow → True
-   ↓
- screenshot #2 → flow → True
-   ↓
- screenshot #3 → flow → False
-   ↓
- done
-```
-
-An optional tick interval is expressed in milliseconds:
-
-```python
-runner.run(login, interval=100)
-```
-
-### Pause and resume
-
-`pause()` pauses the continuous `run()` loop before the next tick:
-
-```python
-runner.pause()
-runner.resume()
-```
-
-Pause never interrupts the current tick. If a pause is requested while the flow is still matching or performing an action, that tick finishes normally. Runner then waits before capturing the next screenshot:
-
-```text
-tick #12
-screenshot
-   ↓
-flow(runtime, image)
-   │
-   │ pause()
-   ↓
+normal tick #1
+      ↓
+high-priority timed task becomes due
+      ↓
 current tick finishes
-   ↓
-PAUSED              # no new screenshot
-   │
-   │ resume()
-   ↓
-next tick
-fresh screenshot
+      ↓
+normal is suspended
+      ↓
+timed tick #1
+      ↓
+timed completes
+      ↓
+normal resumes with a fresh screenshot
+      ↓
+normal tick #2
 ```
 
-`Runner.running` stays `True` while paused because the run lifecycle is still active. `Runner.paused` reports whether that lifecycle is currently paused.
+Only a **strictly higher** priority task preempts the current task. Equal priority tasks wait instead of causing task switching.
 
-Calling `pause()` or `resume()` while Runner is idle is a no-op. `tick()` remains an explicit one-shot operation and is not controlled by the pause flag.
-
-If a pause occurs while Runner is waiting for `interval`, the interval is restarted in full after `resume()`. This keeps timing semantics simple and avoids maintaining partial interval state.
-
-### Stop and lifecycle
-
-`Runner.stop()` requests the loop to stop and also forwards stop to the MaaFramework runtime. It wakes both paused waits and interval waits immediately, so a paused Runner can always be stopped cleanly.
-
-The lifecycle states are intentionally simple:
+Suspended tasks use stack semantics, so nested preemption naturally unwinds:
 
 ```text
-IDLE
-  │ run()
-  ▼
-RUNNING ── pause() ──→ PAUSED
-  ▲                     │
-  └────── resume() ─────┘
-
-RUNNING / PAUSED ── stop() or flow=False ──→ IDLE
+A(priority 10)
+  ↓ preempted by
+B(priority 100)
+  ↓ preempted by
+C(priority 200)
+  ↓ C done
+B resumes
+  ↓ B done
+A resumes
 ```
 
-Re-entering `run()` while it is already running raises `RuntimeError`.
+When a preempting task finishes, the scheduler prefers the suspended task on an equal-priority tie. A ready task with a higher priority still runs first.
 
-Runner also supports context-manager cleanup:
+## Scheduler
+
+Basic use:
 
 ```python
-with Runner.from_maa(
+from maaplus import Scheduler, Task
+
+with Scheduler.from_maa(
     tasker=tasker,
     controller=controller,
     resource=resource,
-) as runner:
-    runner.run(login, interval=100)
+) as scheduler:
+    scheduler.submit(Task("daily", daily_flow, priority=10))
+    scheduler.schedule(Task("timed", timed_flow, priority=100), delay=60_000)
+    scheduler.run(interval=100)
 ```
 
-Runner deliberately does not understand UI states, retries, transitions, or task graphs. It only owns the tick/run lifecycle.
+`interval` is milliseconds between consecutive ticks of the **same** task. A newly selected or preempting task runs immediately.
+
+The scheduler exposes:
+
+```python
+scheduler.current
+scheduler.running
+scheduler.paused
+
+scheduler.pause()
+scheduler.resume()
+scheduler.stop()
+```
+
+`pause()` does not interrupt the current tick; it blocks before the next screenshot. `stop()` wakes paused/timed/interval waits and also forwards stop to MaaFramework work in progress.
+
+## Task-local state
+
+The scheduler does not understand business state. If a task needs Python state across ticks or preemption, use a callable object:
+
+```python
+class DailyFlow:
+    def __init__(self) -> None:
+        self.step = 0
+
+    def __call__(self, runtime: Runtime, image) -> bool:
+        # self.step survives normal ticks and scheduler preemption.
+        ...
+
+
+daily = Task("daily", DailyFlow(), priority=10)
+```
+
+This keeps task business state inside the task instead of teaching the scheduler about application-specific states.
 
 ## MatchResult
 
-A miss is simply false. `hit` and `box` are the common convenience properties:
+A miss is false; `hit` and `box` are common convenience properties:
 
 ```python
 result = runtime.match(Login.START, image)
@@ -234,28 +239,24 @@ if result:
     print(result.box)
 ```
 
-Algorithm-specific data is not copied into MaaPlus. Access the original MaaFramework recognition detail when needed:
+Recognition-specific values remain on the original MaaFramework detail:
 
 ```python
-maa_detail = result.detail
-best_result = maa_detail.best_result
-raw_detail = maa_detail.raw_detail
+result.detail.best_result
+result.detail.raw_detail
 ```
 
-## Click resolver
-
-`MatchResult.click()` uses the center of the matched box by default and holds for 50 ms:
+`MatchResult.click()` clicks the box center by default and holds for 50 ms:
 
 ```python
 result.click()
 result.click(duration=120)
 ```
 
-A custom click position is just a function from `MatchResult` to `(x, y)`:
+A custom click position is a normal function:
 
 ```python
 from random import randrange
-
 from maaplus import MatchResult
 
 
@@ -271,33 +272,19 @@ result.click(random_point, duration=80)
 
 Gesture durations are milliseconds.
 
-`Runtime.click(point, duration)` is one continuous press:
-
-```text
-touch_down(point)
-    ↓ hold for duration
-touch_up()
-```
-
 ```python
 runtime.click((500, 300), duration=100)
 ```
 
-`Runtime.swipe(points, duration)` follows the supplied path from the first point to the last:
+means:
 
 ```text
-touch_down(points[0])
-    ↓
-touch_move(points[1])
-    ↓
-touch_move(points[2])
-    ↓
-...
-    ↓
+touch_down(point)
+hold
 touch_up()
 ```
 
-The total duration is divided evenly across the `len(points) - 1` path intervals.
+A swipe follows every supplied path point:
 
 ```python
 runtime.swipe(
@@ -306,62 +293,33 @@ runtime.swipe(
 )
 ```
 
-## MaaFramework setup
-
-Controller discovery and resource loading remain normal MaaFramework code. `Runner.from_maa()` only owns the final composition/bind step:
-
-```python
-from maa.resource import Resource
-from maa.tasker import Tasker
-from maaplus import Runner
-
-resource = Resource()
-resource.post_bundle("./resource").wait()
-
-with Runner.from_maa(
-    tasker=Tasker(),
-    controller=controller,
-    resource=resource,
-) as runner:
-    runner.run(login)
-```
-
-See `examples/basic_adb.py` for a complete ADB example.
+The total duration is distributed over the path intervals.
 
 ## Architecture
 
 ```text
-                    Runner
-       tick / run / pause / resume / stop
-                       │
-             fresh screenshot per tick
-                       ↓
-          Business flow(runtime, image)
-                       │
-                 True / False
-                       │
-              ┌────────┴────────┐
-              │                 │
-          next tick            done
-
-                    Runtime
-              match / click / swipe
-                       │
-                       ↓
-                  MaaFramework
+                         Scheduler
+          ┌─────────────────┼─────────────────┐
+          │                 │                 │
+      ready heap       timed heap      suspended stack
+          │                 │                 │
+          └─────────────────┼─────────────────┘
+                            ↓
+                       current Task
+                            ↓
+                     fresh screenshot
+                            ↓
+                  flow(runtime, image)
+                            ↓
+                         Runtime
+                   match / click / swipe
+                            ↓
+                       MaaFramework
 ```
 
-Recognition descriptions are MaaFramework objects, not MaaPlus copies:
+The scheduler owns **when and which task runs**. Runtime owns **how MaaFramework operations execute**. Flow owns **business decisions**.
 
-```text
-JTemplateMatch / JOCR / other JRecognitionParam
-                    ↓
-              Runtime.match()
-                    ↓
-              MaaFramework
-```
-
-The rule is simple: MaaPlus should delete boilerplate, not create a second automation framework.
+The rule remains: delete boilerplate, do not build a second automation framework.
 
 ## Tests
 
