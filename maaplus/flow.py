@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from .locator import Locator
@@ -32,8 +33,14 @@ class FlowContext:
         result._click = self.click_point
         return result
 
-    def click_point(self, point: Point) -> bool:
-        success = self.runtime.click(point)
+    def click_point(self, point: Point, duration: int) -> bool:
+        success = self.runtime.click(point, duration)
+        if success:
+            self.invalidate()
+        return success
+
+    def swipe(self, points: Sequence[Point], duration: int) -> bool:
+        success = self.runtime.swipe(points, duration)
         if success:
             self.invalidate()
         return success
