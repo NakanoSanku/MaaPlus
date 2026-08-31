@@ -7,7 +7,7 @@ from maa.resource import Resource
 from maa.tasker import Tasker
 from maa.toolkit import Toolkit
 
-from maaplus import FlowContext, OCR, Runner, Template
+from maaplus import OCR, Runner, Runtime, Template
 
 
 ROOT = Path(__file__).resolve().parent
@@ -21,19 +21,22 @@ class Login:
     CONFIRM = OCR("确认", roi=(400, 350, 480, 360))
 
 
-def login_flow(ctx: FlowContext) -> None:
-    ctx.match(Login.CLOSE_NOTICE).click()
-
-    start = ctx.match(Login.START)
-    if not start:
-        print("START not found")
+def login_flow(runtime: Runtime, image) -> None:
+    # Every match in this run uses exactly the same screenshot.
+    close = runtime.match(Login.CLOSE_NOTICE, image)
+    if close:
+        close.click()
         return
 
-    print(f"START matched: box={start.box}")
-    start.click()
+    start = runtime.match(Login.START, image)
+    if start:
+        print(f"START matched: box={start.box}")
+        start.click()
+        return
 
-    # The successful click invalidated the shared frame, so this match captures a new one.
-    ctx.match(Login.CONFIRM).click()
+    confirm = runtime.match(Login.CONFIRM, image)
+    if confirm:
+        confirm.click()
 
 
 def create_adb_controller() -> AdbController:
@@ -75,6 +78,7 @@ def main() -> None:
     )
 
     try:
+        # Each run is one fresh-screen decision tick.
         runner.run(login_flow)
     finally:
         runner.stop()
