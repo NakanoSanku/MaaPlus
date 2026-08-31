@@ -2,16 +2,19 @@
 
 MaaPlus is a minimal code-first layer on top of [MaaFramework](https://github.com/MaaXYZ/MaaFramework).
 
-MaaFramework keeps responsibility for recognition, resources, controllers, and native execution. MaaPlus only adds a small Python-side structure for locators, match results, gestures, and flow execution.
+MaaFramework keeps responsibility for recognition, resources, controllers, and native execution. MaaPlus only adds a small Python-side runtime, match-result sugar, gesture helpers, and one-screenshot-per-flow execution.
 
 ## Core API
 
-- `Template` / `OCR` — describe how to match UI elements.
+- `Template` — alias of MaaFramework `JTemplateMatch`.
+- `OCR` — alias of MaaFramework `JOCR`.
 - `MatchResult` — thin wrapper around MaaFramework `RecognitionDetail`, adding truthiness and `click()`.
 - `Runtime` — screenshot, match, click, and swipe primitives over MaaFramework.
 - `Runner` — captures one screenshot and executes a plain Python flow function against it.
 
-There is no `Page`, `FlowContext`, `Session`, `BaseFlow`, `require()`, `wait()`, retry DSL, state machine, or plugin layer.
+There is no MaaPlus locator schema. `Runtime.match()` accepts MaaFramework `JRecognitionParam` directly, so MaaFramework recognition features are not copied or restricted by MaaPlus.
+
+There is also no `Page`, `FlowContext`, `Session`, `BaseFlow`, `require()`, `wait()`, retry DSL, state machine, or plugin layer.
 
 ## Installation
 
@@ -19,6 +22,46 @@ This repository currently targets Python 3.14+ and MaaFramework 5.12.3+.
 
 ```bash
 uv sync
+```
+
+## Recognition parameters
+
+`Template` and `OCR` are only friendly aliases; they are the MaaFramework classes themselves:
+
+```python
+from maa.pipeline import JOCR, JTemplateMatch
+from maaplus import OCR, Template
+
+assert Template is JTemplateMatch
+assert OCR is JOCR
+```
+
+Use the normal MaaFramework parameter schema:
+
+```python
+class Login:
+    START = Template(
+        template=["login/start.png"],
+        threshold=[0.85],
+        roi_offset=(0, 0, 0, 0),
+    )
+
+    CONFIRM = OCR(
+        expected=["确认"],
+        replace=[["確認", "确认"]],
+        color_filter="white_text",
+    )
+```
+
+Because MaaPlus does not rebuild these dataclasses, MaaFramework fields such as `roi_offset`, `replace`, and `color_filter` stay available automatically.
+
+`Runtime.match()` accepts the complete MaaFramework `JRecognitionParam` family. Less-common recognition types can be imported directly from MaaFramework:
+
+```python
+from maa.pipeline import JFeatureMatch
+
+feature = JFeatureMatch(template=["feature.png"])
+result = runtime.match(feature, image)
 ```
 
 ## Flow semantics
@@ -37,16 +80,16 @@ all match(..., image) calls use that same image
 
 Clicks and swipes do not replace the current image. To observe the UI after an action, run the flow again; the next `Runner.run(flow)` captures a fresh screenshot.
 
-This means flows are best written as one-snapshot state decisions:
+Flows are therefore best written as one-snapshot state decisions:
 
 ```python
 from maaplus import OCR, Runtime, Template
 
 
 class Login:
-    START = Template("login/start.png", threshold=0.85)
-    CLOSE = OCR(("关闭", "跳过"))
-    CONFIRM = OCR("确认")
+    START = Template(template=["login/start.png"], threshold=[0.85])
+    CLOSE = OCR(expected=["关闭", "跳过"])
+    CONFIRM = OCR(expected=["确认"])
 
 
 def login(runtime: Runtime, image) -> None:
@@ -187,7 +230,15 @@ Runner -- captures one image per run
     MaaFramework
 ```
 
-`Runtime` has no screenshot cache. The image used by a flow is explicit and immutable for that run.
+Recognition descriptions are MaaFramework objects, not MaaPlus copies:
+
+```text
+JTemplateMatch / JOCR / other JRecognitionParam
+                    ↓
+              Runtime.match()
+                    ↓
+              MaaFramework
+```
 
 The rule is simple: MaaPlus should delete boilerplate, not create a second automation framework.
 
