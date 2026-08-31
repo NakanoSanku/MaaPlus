@@ -9,7 +9,7 @@ MaaFramework keeps responsibility for recognition, resources, controllers, and n
 The MVP intentionally keeps the public surface small:
 
 - `Template` / `OCR` — describe how to find UI elements.
-- `Match` — recognition result with `hit`, `box`, `score`, `detail`, and `click()`.
+- `Match` — thin wrapper around MaaFramework `RecognitionDetail`, adding truthiness and `click()`.
 - `FlowContext` — shared screenshot plus `find()`.
 - `Runtime` — thin MaaFramework adapter.
 - `Runner` — binds the runtime and executes a plain Python flow function.
@@ -44,14 +44,24 @@ def login(ctx: FlowContext) -> None:
     ctx.find(Login.CONFIRM).click()
 ```
 
-A miss is simply false:
+A miss is simply false. `hit` and `box` are the only common convenience properties:
 
 ```python
 match = ctx.find(Login.START)
 
 if match:
-    print(match.box, match.score)
+    print(match.box)
 ```
+
+Algorithm-specific data is not copied into MaaPlus. Access the original MaaFramework recognition detail when needed:
+
+```python
+maa_detail = match.detail
+best_result = maa_detail.best_result
+raw_detail = maa_detail.raw_detail
+```
+
+For example, template score or OCR text can be read from `best_result` according to the MaaFramework recognition type.
 
 `click()` returns `False` when the match missed or has no clickable box.
 
