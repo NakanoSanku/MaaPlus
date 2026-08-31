@@ -207,7 +207,9 @@ scheduler.resume()
 scheduler.stop()
 ```
 
-`pause()` does not interrupt the current tick; it blocks before the next screenshot. `stop()` wakes paused/timed/interval waits and also forwards stop to MaaFramework work in progress.
+`pause()` does not interrupt the current tick; it blocks before the next screenshot. `resume()` continues scheduling from that boundary.
+
+`stop()` wakes paused/timed/interval waits and forwards stop to MaaFramework work in progress. Unfinished current/queued tasks remain on the scheduler object, so calling `run()` again can continue them; pause/resume is still the preferred mechanism for a temporary in-process pause.
 
 ## Task-local state
 
