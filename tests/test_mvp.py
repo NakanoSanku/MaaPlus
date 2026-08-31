@@ -3,7 +3,8 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from maaplus import MatchResult, Runner, Runtime, Template
+from maa.pipeline import JOCR, JFeatureMatch, JRecognitionType, JTemplateMatch
+from maaplus import MatchResult, OCR, Runner, Runtime, Template
 
 
 def make_match(hit: bool, box=None, click=None) -> MatchResult:
@@ -62,11 +63,86 @@ class FakeController:
         return FakeJob()
 
 
+class FakeRecognitionJob(FakeJob):
+    def __init__(self, recognition) -> None:
+        self.task_detail = SimpleNamespace(nodes=[SimpleNamespace(recognition=recognition)])
+
+    def get(self):
+        return self.task_detail
+
+
+class FakeTasker:
+    running = False
+
+    def __init__(self, recognition) -> None:
+        self.recognition = recognition
+        self.calls: list[tuple[object, object, object]] = []
+
+    def post_recognition(self, recognition_type, param, image):
+        self.calls.append((recognition_type, param, image))
+        return FakeRecognitionJob(self.recognition)
+
+
+class RecognitionParamTests(unittest.TestCase):
+    def test_common_aliases_are_native_maa_classes(self) -> None:
+        self.assertIs(Template, JTemplateMatch)
+        self.assertIs(OCR, JOCR)
+
+    def test_runtime_passes_template_param_through_without_rebuilding(self) -> None:
+        detail = SimpleNamespace(hit=True, box=(1, 2, 3, 4))
+        tasker = FakeTasker(detail)
+        runtime = Runtime(tasker=tasker, controller=FakeController())
+        image = object()
+        locator = Template(
+            template=["button.png"],
+            threshold=[0.85],
+            roi_offset=(1, 2, 3, 4),
+        )
+
+        result = runtime.match(locator, image)
+
+        recognition_type, param, passed_image = tasker.calls[0]
+        self.assertEqual(recognition_type, JRecognitionType.TemplateMatch)
+        self.assertIs(param, locator)
+        self.assertIs(passed_image, image)
+        self.assertIs(result.detail, detail)
+
+    def test_runtime_preserves_ocr_specific_fields(self) -> None:
+        detail = SimpleNamespace(hit=False, box=None)
+        tasker = FakeTasker(detail)
+        runtime = Runtime(tasker=tasker, controller=FakeController())
+        locator = OCR(
+            expected=["确认"],
+            replace=[["確認", "确认"]],
+            color_filter="white_text",
+        )
+
+        runtime.match(locator, object())
+
+        recognition_type, param, _ = tasker.calls[0]
+        self.assertEqual(recognition_type, JRecognitionType.OCR)
+        self.assertIs(param, locator)
+        self.assertEqual(param.replace, [["確認", "确认"]])
+        self.assertEqual(param.color_filter, "white_text")
+
+    def test_runtime_accepts_other_maa_recognition_params(self) -> None:
+        detail = SimpleNamespace(hit=False, box=None)
+        tasker = FakeTasker(detail)
+        runtime = Runtime(tasker=tasker, controller=FakeController())
+        locator = JFeatureMatch(template=["feature.png"])
+
+        runtime.match(locator, object())
+
+        recognition_type, param, _ = tasker.calls[0]
+        self.assertEqual(recognition_type, JRecognitionType.FeatureMatch)
+        self.assertIs(param, locator)
+
+
 class FlowSnapshotTests(unittest.TestCase):
     def test_one_flow_run_uses_one_screenshot(self) -> None:
         runtime = FakeRuntime()
-        first = Template("first.png")
-        second = Template("second.png")
+        first = Template(template=["first.png"])
+        second = Template(template=["second.png"])
         runtime.hits[first] = (True, (10, 20, 30, 40))
         runtime.hits[second] = (True, (50, 60, 20, 20))
         runner = Runner(runtime)
@@ -96,7 +172,7 @@ class FlowSnapshotTests(unittest.TestCase):
 
     def test_custom_click_resolver_and_duration(self) -> None:
         runtime = FakeRuntime()
-        locator = Template("button.png")
+        locator = Template(template=["button.png"])
         runtime.hits[locator] = (True, (10, 20, 30, 40))
         image = runtime.screenshot()
 
