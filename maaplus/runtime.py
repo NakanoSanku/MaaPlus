@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 from ._maa import compile_locator
-from .locator import Locator, Rect
-from .match import MatchResult
+from .locator import Locator
+from .match import MatchResult, Point
 
 
 class Runtime:
@@ -42,13 +42,11 @@ class Runtime:
 
         return MatchResult(recognition)
 
-    def click(self, box: Rect) -> bool:
-        x, y, width, height = box
-        point_x = x + width // 2
-        point_y = y + height // 2
-        job = self.controller.post_click(point_x, point_y).wait()
+    def click(self, point: Point) -> bool:
+        x, y = point
+        job = self.controller.post_click(x, y).wait()
         if not job.succeeded:
-            raise RuntimeError(f"MaaFramework click failed at ({point_x}, {point_y})")
+            raise RuntimeError(f"MaaFramework click failed at ({x}, {y})")
         return True
 
     def stop(self) -> None:
