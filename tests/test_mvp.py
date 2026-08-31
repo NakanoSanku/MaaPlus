@@ -139,15 +139,18 @@ class RecognitionParamTests(unittest.TestCase):
 
 
 class FlowSnapshotTests(unittest.TestCase):
-    def test_one_flow_run_uses_one_screenshot(self) -> None:
+    def test_tick_uses_one_fixed_screenshot(self) -> None:
         runtime = FakeRuntime()
         first = Template(template=["first.png"])
         second = Template(template=["second.png"])
         runtime.hits[id(first)] = (True, (10, 20, 30, 40))
         runtime.hits[id(second)] = (True, (50, 60, 20, 20))
         runner = Runner(runtime)
+        seen_image = None
 
-        def flow(rt, image):
+        def flow(rt, image) -> bool:
+            nonlocal seen_image
+            seen_image = image
             first_result = rt.match(first, image)
             second_result = rt.match(second, image)
             self.assertTrue(first_result)
@@ -155,20 +158,14 @@ class FlowSnapshotTests(unittest.TestCase):
 
             first_result.click()
 
-            # Actions do not replace the current flow snapshot.
+            # Actions do not replace the current tick snapshot.
             rt.match(second, image)
-            return image
+            return False
 
-        first_image = runner.run(flow)
+        self.assertFalse(runner.tick(flow))
         self.assertEqual(runtime.frames, 1)
-        self.assertTrue(all(image is first_image for _, image in runtime.matches))
+        self.assertTrue(all(image is seen_image for _, image in runtime.matches))
         self.assertEqual(runtime.clicks, [((25, 40), 50)])
-
-        runtime.matches.clear()
-        second_image = runner.run(flow)
-        self.assertEqual(runtime.frames, 2)
-        self.assertIsNot(first_image, second_image)
-        self.assertTrue(all(image is second_image for _, image in runtime.matches))
 
     def test_custom_click_resolver_and_duration(self) -> None:
         runtime = FakeRuntime()
@@ -222,11 +219,62 @@ class RuntimeGestureTests(unittest.TestCase):
 
 
 class RunnerTests(unittest.TestCase):
-    def test_runner_can_stop_runtime(self) -> None:
+    def test_run_captures_a_new_screenshot_each_tick_until_false(self) -> None:
         runtime = FakeRuntime()
         runner = Runner(runtime)
+        images: list[object] = []
 
-        runner.stop()
+        def flow(rt, image) -> bool:
+            self.assertTrue(runner.running)
+            images.append(image)
+            return len(images) < 3
+
+        runner.run(flow)
+
+        self.assertEqual(runtime.frames, 3)
+        self.assertEqual(len({id(image) for image in images}), 3)
+        self.assertFalse(runner.running)
+
+    def test_stop_requests_loop_exit_and_stops_runtime(self) -> None:
+        runtime = FakeRuntime()
+        runner = Runner(runtime)
+        ticks = 0
+
+        def flow(rt, image) -> bool:
+            nonlocal ticks
+            ticks += 1
+            if ticks == 2:
+                runner.stop()
+            return True
+
+        runner.run(flow)
+
+        self.assertEqual(ticks, 2)
+        self.assertTrue(runtime.stopped)
+        self.assertFalse(runner.running)
+
+    def test_run_rejects_negative_interval(self) -> None:
+        runner = Runner(FakeRuntime())
+
+        with self.assertRaises(ValueError):
+            runner.run(lambda rt, image: False, interval=-1)
+
+    def test_runner_rejects_reentrant_run(self) -> None:
+        runner = Runner(FakeRuntime())
+
+        def flow(rt, image) -> bool:
+            with self.assertRaises(RuntimeError):
+                runner.run(lambda nested_rt, nested_image: False)
+            return False
+
+        runner.run(flow)
+
+    def test_context_manager_stops_runtime(self) -> None:
+        runtime = FakeRuntime()
+
+        with Runner(runtime) as runner:
+            self.assertIs(runner.runtime, runtime)
+
         self.assertTrue(runtime.stopped)
 
 
