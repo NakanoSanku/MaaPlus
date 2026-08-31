@@ -4,7 +4,7 @@ from typing import Any
 
 from ._maa import compile_locator
 from .locator import Locator, Rect
-from .result import Match
+from .match import Match
 
 
 class Runtime:
