@@ -6,7 +6,7 @@ from threading import Event, Thread
 from types import SimpleNamespace
 
 from maa.pipeline import JOCR, JFeatureMatch, JRecognitionType, JTemplateMatch
-from maaplus import FlowResult, MatchResult, OCR, Runtime, Scheduler, Task, Template, routed
+from maaplus import MatchResult, OCR, Runtime, Scheduler, Task, TaskResult, Template, Tick, routed
 
 
 def make_match(hit: bool, box=None, click=None) -> MatchResult:
@@ -46,7 +46,7 @@ class FakeNavigator:
         self.current = current
         self.transitions: list[tuple[str, str]] = []
 
-    def ensure(self, target, runtime, image) -> bool:
+    def ensure(self, target: str, tick: Tick) -> bool:
         if self.current == target:
             return True
         self.transitions.append((self.current, target))
@@ -153,39 +153,47 @@ class RecognitionParamTests(unittest.TestCase):
         self.assertIs(param, locator)
 
 
-class FlowSnapshotTests(unittest.TestCase):
-    def test_tick_uses_one_fixed_screenshot(self) -> None:
+class TaskHandlerTests(unittest.TestCase):
+    def test_scheduler_invokes_handler_with_one_fixed_tick_snapshot(self) -> None:
         runtime = FakeRuntime()
         first = Template(template=["first.png"])
         second = Template(template=["second.png"])
         runtime.hits[id(first)] = (True, (10, 20, 30, 40))
         runtime.hits[id(second)] = (True, (50, 60, 20, 20))
         scheduler = Scheduler(runtime)
-        seen_image = None
+        seen_tick: Tick | None = None
 
-        def flow(rt, image) -> FlowResult:
-            nonlocal seen_image
-            seen_image = image
-            first_result = rt.match(first, image)
-            second_result = rt.match(second, image)
+        def handler(tick: Tick) -> TaskResult:
+            nonlocal seen_tick
+            seen_tick = tick
+            first_result = tick.match(first)
+            second_result = tick.match(second)
             self.assertTrue(first_result)
             self.assertTrue(second_result)
             first_result.click()
-            rt.match(second, image)
-            return FlowResult.DONE
+            tick.match(second)
+            return TaskResult.DONE
 
-        task = Task("snapshot", flow)
-        self.assertIs(scheduler.tick(task), FlowResult.DONE)
+        task = Task("snapshot", handler)
+        self.assertIs(scheduler.tick(task), TaskResult.DONE)
         self.assertEqual(runtime.frames, 1)
-        self.assertTrue(all(image is seen_image for _, image in runtime.matches))
+        self.assertIsNotNone(seen_tick)
+        self.assertTrue(all(image is seen_tick.image for _, image in runtime.matches))
         self.assertEqual(runtime.clicks, [((25, 40), 50)])
 
-    def test_tick_rejects_legacy_bool_result(self) -> None:
+    def test_scheduler_rejects_non_task_result(self) -> None:
         scheduler = Scheduler(FakeRuntime())
-        task = Task("legacy", lambda rt, image: True)  # type: ignore[arg-type]
+        task = Task("legacy", lambda tick: True)  # type: ignore[arg-type]
 
-        with self.assertRaisesRegex(TypeError, "must return FlowResult"):
+        with self.assertRaisesRegex(TypeError, "handler must return TaskResult"):
             scheduler.tick(task)
+
+    def test_task_exposes_handler_not_flow(self) -> None:
+        handler = lambda tick: TaskResult.DONE
+        task = Task("handler", handler)
+
+        self.assertIs(task.handler, handler)
+        self.assertFalse(hasattr(task, "flow"))
 
     def test_custom_click_resolver_and_duration(self) -> None:
         runtime = FakeRuntime()
@@ -238,26 +246,25 @@ class RuntimeGestureTests(unittest.TestCase):
             runtime.swipe([(0, 0)], 100)
 
 
-class RoutedFlowTests(unittest.TestCase):
-    def test_routed_flow_navigates_before_running_business_flow(self) -> None:
+class RoutedTaskHandlerTests(unittest.TestCase):
+    def test_routed_handler_navigates_before_business_handler(self) -> None:
         runtime = FakeRuntime()
         navigator = FakeNavigator("explore")
         calls: list[str] = []
-
-        flow = routed(
-            lambda rt, image: calls.append("draw") or FlowResult.DONE,
+        handler = routed(
+            lambda tick: calls.append("draw") or TaskResult.DONE,
             target="draw",
             navigator=navigator,
         )
 
-        self.assertIs(flow(runtime, object()), FlowResult.CONTINUE)
+        self.assertIs(handler(Tick(runtime, object())), TaskResult.CONTINUE)
         self.assertEqual(calls, [])
         self.assertEqual(navigator.transitions, [("explore", "draw")])
 
-        self.assertIs(flow(runtime, object()), FlowResult.DONE)
+        self.assertIs(handler(Tick(runtime, object())), TaskResult.DONE)
         self.assertEqual(calls, ["draw"])
 
-    def test_scheduler_routes_to_preempting_context_and_restores_suspended_context(self) -> None:
+    def test_scheduler_routes_preempting_and_restored_task_handlers(self) -> None:
         runtime = FakeRuntime()
         navigator = FakeNavigator("explore")
         scheduler = Scheduler(runtime)
@@ -267,25 +274,25 @@ class RoutedFlowTests(unittest.TestCase):
         draw = Task(
             "draw",
             routed(
-                lambda rt, image: order.append("draw") or FlowResult.DONE,
+                lambda tick: order.append("draw") or TaskResult.DONE,
                 target="draw",
                 navigator=navigator,
             ),
             priority=100,
         )
 
-        def explore_flow(rt, image) -> FlowResult:
+        def explore_handler(tick: Tick) -> TaskResult:
             nonlocal explore_ticks
             explore_ticks += 1
             order.append(f"explore-{explore_ticks}")
             if explore_ticks == 1:
                 scheduler.submit(draw)
-                return FlowResult.YIELD
-            return FlowResult.DONE
+                return TaskResult.YIELD
+            return TaskResult.DONE
 
         explore = Task(
             "explore",
-            routed(explore_flow, target="explore", navigator=navigator),
+            routed(explore_handler, target="explore", navigator=navigator),
             priority=10,
         )
 
@@ -307,10 +314,10 @@ class SchedulerTests(unittest.TestCase):
         order: list[str] = []
 
         scheduler.submit(
-            Task("low", lambda rt, image: order.append("low") or FlowResult.DONE, priority=10)
+            Task("low", lambda tick: order.append("low") or TaskResult.DONE, priority=10)
         )
         scheduler.submit(
-            Task("high", lambda rt, image: order.append("high") or FlowResult.DONE, priority=100)
+            Task("high", lambda tick: order.append("high") or TaskResult.DONE, priority=100)
         )
         scheduler.run()
 
@@ -325,20 +332,20 @@ class SchedulerTests(unittest.TestCase):
 
         high = Task(
             "high",
-            lambda rt, image: order.append("high") or FlowResult.DONE,
+            lambda tick: order.append("high") or TaskResult.DONE,
             priority=100,
         )
 
-        def low_flow(rt, image) -> FlowResult:
+        def low_handler(tick: Tick) -> TaskResult:
             nonlocal low_ticks
             low_ticks += 1
             order.append(f"low-{low_ticks}")
             if low_ticks == 1:
                 scheduler.submit(high)
-                return FlowResult.YIELD
-            return FlowResult.DONE
+                return TaskResult.YIELD
+            return TaskResult.DONE
 
-        low = Task("low", low_flow, priority=10)
+        low = Task("low", low_handler, priority=10)
         scheduler.submit(low)
         scheduler.run()
 
@@ -350,26 +357,26 @@ class SchedulerTests(unittest.TestCase):
         runtime = FakeRuntime()
         scheduler = Scheduler(runtime)
         order: list[str] = []
-        low_ticks = 0
+        battle_ticks = 0
 
         high = Task(
             "timed",
-            lambda rt, image: order.append("timed") or FlowResult.DONE,
+            lambda tick: order.append("timed") or TaskResult.DONE,
             priority=100,
         )
 
-        def battle_flow(rt, image) -> FlowResult:
-            nonlocal low_ticks
-            low_ticks += 1
-            order.append(f"battle-{low_ticks}")
-            if low_ticks == 1:
+        def battle_handler(tick: Tick) -> TaskResult:
+            nonlocal battle_ticks
+            battle_ticks += 1
+            order.append(f"battle-{battle_ticks}")
+            if battle_ticks == 1:
                 scheduler.submit(high)
-                return FlowResult.CONTINUE
-            if low_ticks == 2:
-                return FlowResult.YIELD
-            return FlowResult.DONE
+                return TaskResult.CONTINUE
+            if battle_ticks == 2:
+                return TaskResult.YIELD
+            return TaskResult.DONE
 
-        scheduler.submit(Task("battle", battle_flow, priority=10))
+        scheduler.submit(Task("battle", battle_handler, priority=10))
         scheduler.run()
 
         self.assertEqual(order, ["battle-1", "battle-2", "timed", "battle-3"])
@@ -383,20 +390,20 @@ class SchedulerTests(unittest.TestCase):
 
         timed = Task(
             "timed",
-            lambda rt, image: order.append("timed") or FlowResult.DONE,
+            lambda tick: order.append("timed") or TaskResult.DONE,
             priority=100,
         )
 
-        def normal_flow(rt, image) -> FlowResult:
+        def normal_handler(tick: Tick) -> TaskResult:
             nonlocal normal_ticks
             normal_ticks += 1
             order.append(f"normal-{normal_ticks}")
             if normal_ticks == 1:
                 scheduler.after(timed, delay=0)
-                return FlowResult.YIELD
-            return FlowResult.DONE
+                return TaskResult.YIELD
+            return TaskResult.DONE
 
-        scheduler.submit(Task("normal", normal_flow, priority=10))
+        scheduler.submit(Task("normal", normal_handler, priority=10))
         scheduler.run()
 
         self.assertEqual(order, ["normal-1", "timed", "normal-2"])
@@ -405,7 +412,7 @@ class SchedulerTests(unittest.TestCase):
         runtime = FakeRuntime()
         scheduler = Scheduler(runtime)
         ran = Event()
-        task = Task("at", lambda rt, image: ran.set() or FlowResult.DONE)
+        task = Task("at", lambda tick: ran.set() or TaskResult.DONE)
 
         scheduler.at(task, when=datetime.now() + timedelta(milliseconds=10))
         scheduler.run()
@@ -418,14 +425,14 @@ class SchedulerTests(unittest.TestCase):
         scheduler = Scheduler(runtime)
         ticks = 0
 
-        def flow(rt, image) -> FlowResult:
+        def handler(tick: Tick) -> TaskResult:
             nonlocal ticks
             ticks += 1
             if ticks == 3:
                 scheduler.stop()
-            return FlowResult.DONE
+            return TaskResult.DONE
 
-        scheduler.every(Task("periodic", flow), interval=1)
+        scheduler.every(Task("periodic", handler), interval=1)
         scheduler.run()
 
         self.assertEqual(ticks, 3)
@@ -437,12 +444,12 @@ class SchedulerTests(unittest.TestCase):
         scheduler = Scheduler(runtime)
         runs = 0
 
-        def flow(rt, image) -> FlowResult:
+        def handler(tick: Tick) -> TaskResult:
             nonlocal runs
             runs += 1
-            return FlowResult.DONE
+            return TaskResult.DONE
 
-        task = Task("coalesced", flow)
+        task = Task("coalesced", handler)
         scheduler.submit(task)
         scheduler.submit(task)
         scheduler.submit(task)
@@ -459,20 +466,20 @@ class SchedulerTests(unittest.TestCase):
 
         equal = Task(
             "equal",
-            lambda rt, image: order.append("equal") or FlowResult.DONE,
+            lambda tick: order.append("equal") or TaskResult.DONE,
             priority=10,
         )
 
-        def primary_flow(rt, image) -> FlowResult:
+        def primary_handler(tick: Tick) -> TaskResult:
             nonlocal primary_ticks
             primary_ticks += 1
             order.append(f"primary-{primary_ticks}")
             if primary_ticks == 1:
                 scheduler.submit(equal)
-                return FlowResult.YIELD
-            return FlowResult.DONE
+                return TaskResult.YIELD
+            return TaskResult.DONE
 
-        scheduler.submit(Task("primary", primary_flow, priority=10))
+        scheduler.submit(Task("primary", primary_handler, priority=10))
         scheduler.run()
 
         self.assertEqual(order, ["primary-1", "primary-2", "equal"])
@@ -481,7 +488,7 @@ class SchedulerTests(unittest.TestCase):
         runtime = FakeRuntime()
         scheduler = Scheduler(runtime)
         ran = Event()
-        task = Task("future", lambda rt, image: ran.set() or FlowResult.DONE, priority=10)
+        task = Task("future", lambda tick: ran.set() or TaskResult.DONE, priority=10)
 
         scheduler.after(task, delay=10)
         scheduler.run()
@@ -489,22 +496,22 @@ class SchedulerTests(unittest.TestCase):
         self.assertTrue(ran.is_set())
         self.assertEqual(runtime.frames, 1)
 
-    def test_pause_blocks_before_next_tick_and_resume_continues(self) -> None:
+    def test_pause_blocks_before_next_handler_and_resume_continues(self) -> None:
         runtime = FakeRuntime()
         scheduler = Scheduler(runtime)
         pause_requested = Event()
         ticks = 0
 
-        def flow(rt, image) -> FlowResult:
+        def handler(tick: Tick) -> TaskResult:
             nonlocal ticks
             ticks += 1
             if ticks == 1:
                 scheduler.pause()
                 pause_requested.set()
-                return FlowResult.CONTINUE
-            return FlowResult.DONE
+                return TaskResult.CONTINUE
+            return TaskResult.DONE
 
-        scheduler.submit(Task("pause", flow))
+        scheduler.submit(Task("pause", handler))
         thread = Thread(target=scheduler.run, daemon=True)
         thread.start()
 
@@ -527,12 +534,12 @@ class SchedulerTests(unittest.TestCase):
         scheduler = Scheduler(runtime)
         pause_requested = Event()
 
-        def flow(rt, image) -> FlowResult:
+        def handler(tick: Tick) -> TaskResult:
             scheduler.pause()
             pause_requested.set()
-            return FlowResult.CONTINUE
+            return TaskResult.CONTINUE
 
-        scheduler.submit(Task("pause", flow))
+        scheduler.submit(Task("pause", handler))
         thread = Thread(target=scheduler.run, daemon=True)
         thread.start()
 
@@ -551,11 +558,11 @@ class SchedulerTests(unittest.TestCase):
         scheduler = Scheduler(runtime)
         first_tick = Event()
 
-        def flow(rt, image) -> FlowResult:
+        def handler(tick: Tick) -> TaskResult:
             first_tick.set()
-            return FlowResult.CONTINUE
+            return TaskResult.CONTINUE
 
-        scheduler.submit(Task("loop", flow))
+        scheduler.submit(Task("loop", handler))
         thread = Thread(target=scheduler.run, kwargs={"interval": 60_000}, daemon=True)
         thread.start()
 
@@ -568,7 +575,7 @@ class SchedulerTests(unittest.TestCase):
 
     def test_invalid_trigger_and_run_intervals_are_rejected(self) -> None:
         scheduler = Scheduler(FakeRuntime())
-        task = Task("noop", lambda rt, image: FlowResult.DONE)
+        task = Task("noop", lambda tick: TaskResult.DONE)
 
         with self.assertRaises(ValueError):
             scheduler.after(task, delay=-1)
@@ -580,12 +587,12 @@ class SchedulerTests(unittest.TestCase):
     def test_scheduler_rejects_reentrant_run(self) -> None:
         scheduler = Scheduler(FakeRuntime())
 
-        def flow(rt, image) -> FlowResult:
+        def handler(tick: Tick) -> TaskResult:
             with self.assertRaises(RuntimeError):
                 scheduler.run()
-            return FlowResult.DONE
+            return TaskResult.DONE
 
-        scheduler.submit(Task("reentrant", flow))
+        scheduler.submit(Task("reentrant", handler))
         scheduler.run()
 
     def test_context_manager_stops_runtime(self) -> None:
