@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING
 
 from maa.pipeline import JRecognitionParam
 
 from .runtime import MatchResult, Point, Runtime
-from .scheduler import Flow, FlowResult
 
 if TYPE_CHECKING:
     import numpy
@@ -15,10 +14,11 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class Tick:
-    """One flow decision over one fixed screenshot.
+    """One task-handler decision over one fixed screenshot.
 
-    ``Tick`` hides explicit screenshot plumbing from application flows. Every ``match()`` call uses
-    the same image captured for this scheduler tick, while actions are forwarded to ``Runtime``.
+    Every ``match()`` call uses the same image captured for this scheduler tick, while actions are
+    forwarded to ``Runtime``. Task handlers receive a ``Tick`` directly; application code never
+    needs to pass ``runtime`` and ``image`` separately.
     """
 
     runtime: Runtime
@@ -32,19 +32,3 @@ class Tick:
 
     def swipe(self, points: Sequence[Point], duration: int) -> bool:
         return self.runtime.swipe(points, duration)
-
-
-TickFlow: TypeAlias = Callable[[Tick], FlowResult]
-
-
-@dataclass(frozen=True, slots=True)
-class _TickFlowAdapter:
-    flow: TickFlow
-
-    def __call__(self, runtime: Runtime, image: numpy.ndarray) -> FlowResult:
-        return self.flow(Tick(runtime=runtime, image=image))
-
-
-def ticked(flow: TickFlow) -> Flow:
-    """Adapt a high-level ``flow(tick)`` callable to the low-level scheduler flow protocol."""
-    return _TickFlowAdapter(flow)
