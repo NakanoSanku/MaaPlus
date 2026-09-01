@@ -5,10 +5,10 @@ from maaplus import CONTINUE, DONE, Tick
 from ..ui.draw import DrawUI
 
 
-class DrawFlow:
-    """Recurring high-priority task.
+class DrawHandler:
+    """Recurring high-priority task handler.
 
-    The same flow object is reused across executions, so execution-local state is reset before
+    The same handler object is reused across executions, so execution-local state is reset before
     returning DONE.
     """
 

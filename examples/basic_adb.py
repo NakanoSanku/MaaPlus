@@ -30,7 +30,7 @@ class Login:
     )
 
 
-def login_flow(tick: Tick):
+def login_handler(tick: Tick):
     if close := tick.match(Login.CLOSE_NOTICE):
         close.click()
         return CONTINUE
@@ -84,7 +84,7 @@ def main() -> None:
         controller=create_adb_controller(),
         resource=load_resource(),
     ) as app:
-        app.task("login", login_flow, priority=10).submit()
+        app.task("login", login_handler, priority=10).submit()
         app.run(interval=100)
 
 

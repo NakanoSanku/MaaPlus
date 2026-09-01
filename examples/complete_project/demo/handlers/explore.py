@@ -5,8 +5,8 @@ from maaplus import CONTINUE, DONE, YIELD, Tick
 from ..ui.explore import ExploreUI
 
 
-class ExploreFlow:
-    """Long-running exploration task with explicit handoff-safe points."""
+class ExploreHandler:
+    """Long-running exploration task handler with explicit handoff-safe points."""
 
     def __init__(self, *, max_monsters: int) -> None:
         self.max_monsters = max_monsters
@@ -14,7 +14,7 @@ class ExploreFlow:
         self._battle_started = False
 
     def __call__(self, tick: Tick):
-        # Battle UI is flow-private. A higher-priority task must wait.
+        # Battle UI is handler-private. A higher-priority task must wait.
         if tick.match(ExploreUI.BATTLE):
             self._battle_started = True
             return CONTINUE

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from maaplus import App, CONTINUE, DONE, YIELD, FlowResult, Scheduler, Tick
+from maaplus import App, CONTINUE, DONE, YIELD, Scheduler, TaskHandler, TaskResult, Tick
 
 
 class FakeRuntime:
@@ -54,14 +54,18 @@ class TickTests(unittest.TestCase):
         self.assertIs(passed_locator, locator)
         self.assertIs(passed_image, image)
 
-    def test_short_result_aliases_are_flow_results(self) -> None:
-        self.assertIs(CONTINUE, FlowResult.CONTINUE)
-        self.assertIs(YIELD, FlowResult.YIELD)
-        self.assertIs(DONE, FlowResult.DONE)
+    def test_short_result_aliases_are_task_results(self) -> None:
+        self.assertIs(CONTINUE, TaskResult.CONTINUE)
+        self.assertIs(YIELD, TaskResult.YIELD)
+        self.assertIs(DONE, TaskResult.DONE)
+
+    def test_task_handler_type_accepts_tick_callable(self) -> None:
+        handler: TaskHandler = lambda tick: DONE
+        self.assertIs(handler(Tick(FakeRuntime(), object())), DONE)
 
 
 class AppTests(unittest.TestCase):
-    def test_app_task_submit_runs_tick_flow(self) -> None:
+    def test_app_task_submit_runs_handler(self) -> None:
         runtime = FakeRuntime()
         app = App(Scheduler(runtime))
         seen: list[Tick] = []
@@ -84,14 +88,14 @@ class AppTests(unittest.TestCase):
         app = App(Scheduler(runtime))
         ticks = 0
 
-        def flow(tick: Tick):
+        def handler(tick: Tick):
             nonlocal ticks
             ticks += 1
             if ticks == 2:
                 app.stop()
             return DONE
 
-        app.task("periodic", flow).every(1)
+        app.task("periodic", handler).every(1)
         app.run()
 
         self.assertEqual(ticks, 2)
@@ -111,7 +115,7 @@ class AppTests(unittest.TestCase):
             priority=100,
         )
 
-        def explore_flow(tick: Tick):
+        def explore_handler(tick: Tick):
             nonlocal explore_ticks
             explore_ticks += 1
             order.append(f"explore-{explore_ticks}")
@@ -122,7 +126,7 @@ class AppTests(unittest.TestCase):
 
         app.task(
             "explore",
-            explore_flow,
+            explore_handler,
             context="explore",
             priority=10,
         ).submit()

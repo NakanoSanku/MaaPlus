@@ -2,42 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum, auto
 from heapq import heappop, heappush
 from itertools import count
 from threading import Condition
 from time import monotonic
-from typing import TYPE_CHECKING, Any, Callable
+from typing import Any
 
 from .runtime import Runtime
-
-if TYPE_CHECKING:
-    import numpy
-
-
-class FlowResult(Enum):
-    """Result of one flow tick.
-
-    ``CONTINUE`` keeps ownership of the external UI state and therefore blocks preemption.
-    ``YIELD`` keeps the execution alive but marks the current boundary as safe for preemption.
-    ``DONE`` completes the execution and releases ownership entirely.
-    """
-
-    CONTINUE = auto()
-    YIELD = auto()
-    DONE = auto()
-
-
-Flow = Callable[[Runtime, "numpy.ndarray"], FlowResult]
-
-
-@dataclass(frozen=True, slots=True, eq=False)
-class Task:
-    """One schedulable flow execution."""
-
-    name: str
-    flow: Flow
-    priority: int = 0
+from .task import Task, TaskResult
+from .tick import Tick
 
 
 @dataclass(slots=True)
@@ -153,21 +126,23 @@ class Scheduler:
         self._add_schedule(task, monotonic() + seconds, interval=seconds)
         return task
 
-    def tick(self, task: Task) -> FlowResult:
-        """Capture one fresh screenshot and execute one task decision tick."""
-        result = task.flow(self.runtime, self.runtime.screenshot())
-        if not isinstance(result, FlowResult):
+    def tick(self, task: Task) -> TaskResult:
+        """Capture one fresh screenshot and invoke one task handler."""
+        tick = Tick(runtime=self.runtime, image=self.runtime.screenshot())
+        result = task.handler(tick)
+        if not isinstance(result, TaskResult):
             raise TypeError(
-                f"Task {task.name!r} flow must return FlowResult, got {type(result).__name__}"
+                f"Task {task.name!r} handler must return TaskResult, got {type(result).__name__}"
             )
         return result
 
     def run(self, *, interval: int = 0) -> None:
         """Run scheduled work until no work remains or ``stop()`` is called.
 
-        ``interval`` is the minimum delay in milliseconds between consecutive ticks of the same
-        task. A newly selected or preempting task runs immediately. A higher-priority ready task
-        may preempt the current task only after that task explicitly returns ``FlowResult.YIELD``.
+        ``interval`` is the minimum delay in milliseconds between consecutive handler invocations
+        of the same task. A newly selected or preempting task runs immediately. A higher-priority
+        ready task may preempt the current task only after that handler explicitly returns
+        ``TaskResult.YIELD``.
 
         A scheduler containing recurring ``every()`` work remains alive until ``stop()`` is called.
         """
@@ -191,13 +166,13 @@ class Scheduler:
                 result = self.tick(task)
 
                 with self._condition:
-                    if self._current is task and result is FlowResult.DONE:
+                    if self._current is task and result is TaskResult.DONE:
                         self._current = None
                         self._current_yielded = False
                         self._release_pending_locked(task)
                         delay = 0
                     elif self._current is task:
-                        self._current_yielded = result is FlowResult.YIELD
+                        self._current_yielded = result is TaskResult.YIELD
                         delay = interval
                     self._condition.notify_all()
         finally:
@@ -208,7 +183,7 @@ class Scheduler:
                 self._condition.notify_all()
 
     def pause(self) -> None:
-        """Pause before the next task tick without interrupting the current tick."""
+        """Pause before the next task handler invocation without interrupting the current one."""
         with self._condition:
             if not self._running or self._paused:
                 return

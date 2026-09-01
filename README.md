@@ -2,14 +2,27 @@
 
 MaaPlus is a small code-first application layer on top of [MaaFramework](https://github.com/MaaXYZ/MaaFramework).
 
-For normal application development, start with only these concepts:
+For normal application development, start with these concepts:
 
 - `Template` / `OCR` — describe what UI elements look like.
-- `Tick` — one decision over one fixed screenshot.
-- `CONTINUE` / `YIELD` / `DONE` — tell MaaPlus what should happen after that decision.
+- `Task` — one schedulable piece of work.
+- `TaskHandler` — the business logic executed for that task.
+- `Tick` — one handler invocation over one fixed screenshot.
+- `CONTINUE` / `YIELD` / `DONE` — tell MaaPlus what should happen after the handler returns.
 - `App` — register, schedule, route, and run tasks.
 
-The lower-level `Runtime`, `Task`, `Scheduler`, and `RoutedFlow` APIs remain available when you need direct control, but they are not required for a first project.
+The core relationship is intentionally small:
+
+```text
+Task
+ ├── name
+ ├── priority
+ └── handler(tick)
+          ↓
+   CONTINUE / YIELD / DONE
+```
+
+The lower-level `Runtime` and `Scheduler` APIs remain available when direct control is useful, but they are not required for a first project.
 
 ## Installation
 
@@ -36,13 +49,13 @@ class LoginUI:
     CONFIRM = OCR(expected=["确认"])
 ```
 
-Then write a flow that receives one `Tick`:
+Write a task handler:
 
 ```python
 from maaplus import CONTINUE, DONE, Tick
 
 
-def login(tick: Tick):
+def login_handler(tick: Tick):
     if close := tick.match(LoginUI.CLOSE):
         close.click()
         return CONTINUE
@@ -58,7 +71,7 @@ def login(tick: Tick):
     return DONE
 ```
 
-Register and run it:
+Register and run the task:
 
 ```python
 from maaplus import App
@@ -69,27 +82,78 @@ with App.from_maa(
     controller=controller,
     resource=resource,
 ) as app:
-    app.task("login", login).submit()
+    app.task("login", login_handler).submit()
     app.run(interval=100)
 ```
 
 That is enough for a basic MaaPlus application.
 
+## Task and TaskHandler
+
+A `Task` is only a schedulable identity:
+
+```text
+Task
+ ├── name
+ ├── handler
+ └── priority
+```
+
+Its handler follows one standard signature everywhere in MaaPlus:
+
+```python
+handler(tick: Tick) -> TaskResult
+```
+
+There is no second low-level `(runtime, image)` handler signature. Scheduler itself creates the `Tick` and invokes `Task.handler` directly.
+
+Simple handlers can be functions:
+
+```python
+def claim_reward(tick):
+    if reward := tick.match(UI.REWARD):
+        reward.click()
+        return CONTINUE
+
+    return DONE
+```
+
+Stateful handlers can be callable objects:
+
+```python
+class ExploreHandler:
+    def __init__(self) -> None:
+        self.killed = 0
+
+    def __call__(self, tick):
+        if result := tick.match(ExploreUI.BATTLE_RESULT):
+            result.click()
+            self.killed += 1
+            return CONTINUE
+
+        if self.killed >= 10:
+            return DONE
+
+        return YIELD
+```
+
+The same handler object survives multiple ticks and scheduler preemption, so ordinary Python fields are enough for task-local business progress.
+
 ## Tick
 
-One flow call is one **tick**:
+Each handler invocation receives one `Tick`:
 
 ```text
 fresh screenshot
       ↓
-    Tick
+     Tick
       ↓
-  flow(tick)
+TaskHandler
       ↓
-CONTINUE / YIELD / DONE
+ TaskResult
 ```
 
-Every `tick.match(...)` in that call uses the same screenshot automatically:
+Every `tick.match(...)` during that invocation uses the same screenshot automatically:
 
 ```python
 if tick.match(UI.A):
@@ -99,11 +163,11 @@ if tick.match(UI.B):
     ...
 ```
 
-You do not need to pass `runtime` and `image` through application code yourself.
+You do not need to pass `runtime` and `image` through application code.
 
-Actions do not replace the current tick image. After a click or swipe, return from the flow and observe the resulting UI from a fresh screenshot on a later tick.
+Actions do not replace the current tick image. After a click or swipe, return from the handler and observe the resulting UI from a fresh screenshot on a later tick.
 
-`Tick` also exposes direct actions when needed:
+`Tick` exposes direct actions when needed:
 
 ```python
 tick.click((500, 300), duration=100)
@@ -121,23 +185,23 @@ if button := tick.match(UI.BUTTON):
     button.click()
 ```
 
-## CONTINUE, YIELD, DONE
+## TaskResult: CONTINUE, YIELD, DONE
 
-These are aliases for `FlowResult` values, provided so application flows stay concise.
+`CONTINUE`, `YIELD`, and `DONE` are short aliases for `TaskResult` values.
 
 | Result | Meaning |
 | --- | --- |
-| `CONTINUE` | I am not finished and the current UI is still mine. Do not preempt me. |
-| `YIELD` | I am not finished, but the current UI is safe for another task to take over. |
-| `DONE` | This execution is complete and the UI may be handed to the next task. |
+| `CONTINUE` | This execution is unfinished and still owns the current UI. Do not preempt it. |
+| `YIELD` | This execution is unfinished, but the current UI is safe for another task to take over. |
+| `DONE` | This execution is complete and releases the UI. |
 
-A battle flow commonly looks like this:
+A battle-oriented handler commonly looks like this:
 
 ```python
 from maaplus import CONTINUE, DONE, YIELD
 
 
-def explore(tick):
+def explore_handler(tick):
     if tick.match(ExploreUI.BATTLE_RUNNING):
         return CONTINUE
 
@@ -156,8 +220,8 @@ def explore(tick):
 The important rule is:
 
 ```text
-Tick boundary
-    !=
+handler invocation ends
+        !=
 safe task-switch boundary
 ```
 
@@ -170,13 +234,13 @@ Only `YIELD` explicitly makes an unfinished task preemptible.
 ```python
 explore = app.task(
     "explore",
-    ExploreFlow(),
+    ExploreHandler(),
     priority=10,
 )
 
 draw = app.task(
     "draw",
-    DrawFlow(),
+    DrawHandler(),
     priority=100,
 )
 
@@ -193,13 +257,13 @@ draw.at(target_datetime)
 
 Higher numeric priority wins, but a high-priority task cannot interrupt an unfinished current task until that task returns `YIELD`.
 
-The same task object has at most one active execution plus one pending execution request. Repeated triggers coalesce instead of building an unbounded backlog.
+The same `Task` object has at most one active execution plus one pending execution request. Repeated triggers coalesce instead of building an unbounded backlog.
 
 ## Context navigation
 
-Tasks often need different UI contexts. For example, an exploration task may run from the explore screen while a timed draw task needs the summon screen.
+Tasks often need different UI contexts. For example, an exploration task may require the explore screen while a timed draw task requires the summon screen.
 
-Give `App` a navigator:
+Define application contexts and a navigator:
 
 ```python
 from enum import Enum, auto
@@ -245,9 +309,9 @@ class GameNavigator:
         return False
 ```
 
-`ensure()` returns `True` only when the **current tick snapshot** already satisfies the target. If navigation performs an action, return `False` and let the next tick observe the result.
+`ensure()` returns `True` only when the current tick snapshot already satisfies the target. If navigation performs an action, return `False` and let the next tick observe the result.
 
-Declare task contexts on `App.task()`:
+Give the navigator to `App` and declare contexts on tasks:
 
 ```python
 app = App.from_maa(
@@ -259,14 +323,14 @@ app = App.from_maa(
 
 explore = app.task(
     "explore",
-    ExploreFlow(),
+    ExploreHandler(),
     context=Scene.EXPLORE,
     priority=10,
 )
 
 draw = app.task(
     "draw",
-    DrawFlow(),
+    DrawHandler(),
     context=Scene.DRAW,
     priority=100,
 )
@@ -276,173 +340,173 @@ draw.every(3_600_000)
 app.run(interval=100)
 ```
 
-`App` automatically composes context restoration around each task.
+`App` automatically wraps the handler with context restoration.
 
 A preemption can therefore look like:
 
 ```text
-ExploreFlow: battle running
-      ↓
-CONTINUE
-      ↓
+ExploreHandler: battle running
+        ↓
+     CONTINUE
+        ↓
 Draw task becomes ready
-      ↓
-ExploreFlow keeps running
-      ↓
+        ↓
+ExploreHandler keeps running
+        ↓
 battle finishes, stable explore screen
-      ↓
-YIELD
-      ↓
+        ↓
+      YIELD
+        ↓
 Draw gets control
-      ↓
+        ↓
 Navigator: EXPLORE -> ... -> DRAW
-      ↓
-DrawFlow
-      ↓
-DONE
-      ↓
-Explore resumes
-      ↓
+        ↓
+DrawHandler
+        ↓
+      DONE
+        ↓
+Explore task resumes
+        ↓
 Navigator: DRAW -> ... -> EXPLORE
-      ↓
-original ExploreFlow continues
+        ↓
+original ExploreHandler continues
 ```
 
-The suspended flow object keeps its Python state. The navigator restores the external UI context before that flow is called again.
+The suspended handler object keeps its Python state. The navigator restores the external UI context before that handler is called again.
 
-A safe handoff point does **not** have to be one universal home screen. It only needs to be a state from which your navigator can safely take control.
+A safe handoff point does not have to be one universal home screen. It only needs to be a state from which the navigator can safely take control.
 
-## Stateful flows
+## State ownership
 
-Use callable objects for business progress that must survive multiple ticks or preemption:
-
-```python
-from maaplus import CONTINUE, DONE, YIELD, Tick
-
-
-class ExploreFlow:
-    def __init__(self) -> None:
-        self.killed = 0
-
-    def __call__(self, tick: Tick):
-        if result := tick.match(ExploreUI.BATTLE_RESULT):
-            result.click()
-            self.killed += 1
-            return CONTINUE
-
-        if self.killed >= 10:
-            return DONE
-
-        if tick.match(ExploreUI.EXPLORE_READY):
-            return YIELD
-
-        return CONTINUE
-```
-
-This separates different kinds of state cleanly:
+Different kinds of state have different owners:
 
 ```text
-Python/business progress
-    -> flow object
+Business progress
+    -> TaskHandler object
 
 Current UI scene
-    -> current screenshot + navigator recognition
+    -> current Tick screenshot + Navigator recognition
 
 Safe handoff permission
-    -> YIELD / DONE
+    -> TaskResult.YIELD / DONE
 
-Current/ready/suspended task execution
+Current / ready / suspended execution
     -> Scheduler
 ```
 
-MaaPlus does not add a global game-state manager.
+MaaPlus deliberately does not add a global game-state manager.
+
+Recurring tasks reuse the same handler object. If a field represents execution-local state, reset it before returning `DONE` so the next recurring execution starts cleanly.
 
 ## Recommended project layout
 
-A small application can start with:
+For a small application:
 
 ```text
 my_project/
 ├── app.py
 ├── ui.py
 ├── navigation.py
-├── flows.py
+├── handlers.py
 └── resource/
 ```
 
-As the project grows, split by responsibility:
+As the project grows:
 
 ```text
 my_project/
 ├── ui/
 ├── navigation/
-├── flows/
+├── handlers/
 ├── tasks/
 ├── config/
 └── bootstrap.py
 ```
 
-Keep these boundaries simple:
+Keep the boundaries simple:
 
 - UI definitions describe recognition only.
 - Navigator handles context movement only.
-- Flows own business decisions and business state.
-- App/TaskHandle own registration and scheduling.
+- Task handlers own business decisions and task-local state.
+- Task registration owns priorities and trigger policy.
 - Scheduler stays unaware of application scenes.
 
-## Advanced / low-level API
+See `examples/complete_project/` for a copyable project structure.
 
-The high-level API is intentionally a facade over a smaller core rather than a second execution engine.
+## Advanced API
+
+The high-level API is a facade over a small core, not a second execution engine.
 
 Conceptually:
 
 ```text
-App.task(flow, context, priority)
-             ↓
-        Tick adapter
-             ↓
-   optional RoutedFlow
-             ↓
-            Task
-             ↓
-         Scheduler
-             ↓
-          Runtime
-             ↓
-       MaaFramework
+App.task(handler, context, priority)
+              ↓
+     optional routing wrapper
+              ↓
+             Task
+              ↓
+          Scheduler
+              ↓
+       fresh screenshot
+              ↓
+             Tick
+              ↓
+       Task.handler(tick)
+              ↓
+          TaskResult
+              ↓
+           Runtime
+              ↓
+        MaaFramework
 ```
 
-Advanced users can use the lower-level pieces directly:
+### Task
+
+The core task model is directly usable:
 
 ```python
-from maaplus import FlowResult, Scheduler, Task
+from maaplus import DONE, Scheduler, Task
 
 
-def low_level_flow(runtime, image) -> FlowResult:
-    result = runtime.match(UI.BUTTON, image)
-    if result:
-        result.click()
-        return FlowResult.CONTINUE
-    return FlowResult.DONE
-
-
-scheduler.submit(
-    Task("low-level", low_level_flow, priority=10)
+task = Task(
+    "direct",
+    lambda tick: DONE,
+    priority=10,
 )
-scheduler.run(interval=100)
+
+scheduler.submit(task)
+scheduler.run()
 ```
+
+There is no separate task-handler protocol for advanced use. Direct `Task` construction and `App.task()` use the same `handler(tick)` contract.
 
 ### Runtime
 
-`Runtime` is a thin synchronous facade over MaaFramework. It exposes screenshot, recognition, click, swipe, and stop primitives. It does not own screenshot caching, application scenes, flow state, or scheduling decisions.
+`Runtime` is a thin synchronous facade over MaaFramework. It exposes screenshot, recognition, click, swipe, and stop primitives. It does not own screenshot caching, application scenes, handler state, or scheduling decisions.
 
 ### Scheduler
 
 Scheduler owns ready work, timed and recurring triggers, priority selection, safe-point cooperative preemption, the suspended stack, coalescing, and pause/resume/stop lifecycle. It does not understand application scenes.
 
-### RoutedFlow
+### RoutedTaskHandler
 
-`RoutedFlow` and `routed()` remain available for custom low-level composition. Normal `App.task(..., context=...)` usage performs this wiring automatically.
+`RoutedTaskHandler` and `routed()` remain available for explicit composition:
+
+```python
+from maaplus import Task, routed
+
+
+handler = routed(
+    DrawHandler(),
+    target=Scene.DRAW,
+    navigator=navigator,
+)
+
+task = Task("draw", handler, priority=100)
+```
+
+Normal `App.task(..., context=...)` usage performs this wiring automatically.
 
 ## Architecture
 
@@ -450,27 +514,31 @@ Scheduler owns ready work, timed and recurring triggers, priority selection, saf
                     Application
                         │
                 App / TaskHandle
-                  /           \
-                 /             \
-              Tick         Navigator
-                 \             /
-                  \           /
-                 business Flow
-                       │
-                  FlowResult
-                       │
-          ┌────────────┴────────────┐
-          │                         │
-       routing                  scheduling
-          │                         │
-          └────────────┬────────────┘
-                       ▼
-                    Runtime
-                       ▼
-                  MaaFramework
+                        │
+                       Task
+                   /          \
+                  /            \
+             priority        handler
+                                │
+                  optional context routing
+                                │
+                              Tick
+                                │
+                  CONTINUE / YIELD / DONE
+                                │
+                            Scheduler
+                                │
+                             Runtime
+                                │
+                          MaaFramework
 ```
 
 The core rule remains: remove application boilerplate without rebuilding MaaFramework itself.
+
+## Examples
+
+- `examples/basic_adb.py` — minimal first-contact example.
+- `examples/complete_project/` — recommended multi-task project structure with navigation, preemption, and recurring work.
 
 ## Tests
 

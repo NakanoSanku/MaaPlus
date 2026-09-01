@@ -3,34 +3,35 @@ from maa.pipeline import JRecognitionParam as Locator
 from maa.pipeline import JRect as Rect
 from maa.pipeline import JTemplateMatch as Template
 
-from .app import App, Navigator, TaskHandle
-from .routing import RoutedFlow, routed
+from .app import App, TaskHandle
+from .routing import Navigator, RoutedTaskHandler, routed
 from .runtime import MatchResult, Runtime
-from .scheduler import FlowResult, Scheduler, Task
-from .tick import Tick, ticked
+from .scheduler import Scheduler
+from .task import Task, TaskHandler, TaskResult
+from .tick import Tick
 
-CONTINUE = FlowResult.CONTINUE
-YIELD = FlowResult.YIELD
-DONE = FlowResult.DONE
+CONTINUE = TaskResult.CONTINUE
+YIELD = TaskResult.YIELD
+DONE = TaskResult.DONE
 
 __all__ = [
     "App",
     "CONTINUE",
     "DONE",
-    "FlowResult",
     "Locator",
     "MatchResult",
     "Navigator",
     "OCR",
     "Rect",
-    "RoutedFlow",
+    "RoutedTaskHandler",
     "Runtime",
     "Scheduler",
     "Task",
     "TaskHandle",
+    "TaskHandler",
+    "TaskResult",
     "Template",
     "Tick",
     "YIELD",
     "routed",
-    "ticked",
 ]
