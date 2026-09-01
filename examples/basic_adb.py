@@ -7,7 +7,7 @@ from maa.resource import Resource
 from maa.tasker import Tasker
 from maa.toolkit import Toolkit
 
-from maaplus import OCR, Runtime, Scheduler, Task, Template
+from maaplus import FlowResult, OCR, Runtime, Scheduler, Task, Template
 
 
 ROOT = Path(__file__).resolve().parent
@@ -30,23 +30,24 @@ class Login:
     )
 
 
-def login_flow(runtime: Runtime, image) -> bool:
+def login_flow(runtime: Runtime, image) -> FlowResult:
     close = runtime.match(Login.CLOSE_NOTICE, image)
     if close:
         close.click()
-        return True
+        return FlowResult.CONTINUE
 
     start = runtime.match(Login.START, image)
     if start:
         print(f"START matched: box={start.box}")
         start.click()
-        return True
+        return FlowResult.CONTINUE
 
     confirm = runtime.match(Login.CONFIRM, image)
     if confirm:
         confirm.click()
+        return FlowResult.CONTINUE
 
-    return False
+    return FlowResult.DONE
 
 
 def create_adb_controller() -> AdbController:
