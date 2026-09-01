@@ -7,7 +7,7 @@ from maa.resource import Resource
 from maa.tasker import Tasker
 from maa.toolkit import Toolkit
 
-from maaplus import FlowResult, OCR, Runtime, Scheduler, Task, Template
+from maaplus import App, CONTINUE, DONE, OCR, Template, Tick
 
 
 ROOT = Path(__file__).resolve().parent
@@ -30,24 +30,21 @@ class Login:
     )
 
 
-def login_flow(runtime: Runtime, image) -> FlowResult:
-    close = runtime.match(Login.CLOSE_NOTICE, image)
-    if close:
+def login_flow(tick: Tick):
+    if close := tick.match(Login.CLOSE_NOTICE):
         close.click()
-        return FlowResult.CONTINUE
+        return CONTINUE
 
-    start = runtime.match(Login.START, image)
-    if start:
+    if start := tick.match(Login.START):
         print(f"START matched: box={start.box}")
         start.click()
-        return FlowResult.CONTINUE
+        return CONTINUE
 
-    confirm = runtime.match(Login.CONFIRM, image)
-    if confirm:
+    if confirm := tick.match(Login.CONFIRM):
         confirm.click()
-        return FlowResult.CONTINUE
+        return CONTINUE
 
-    return FlowResult.DONE
+    return DONE
 
 
 def create_adb_controller() -> AdbController:
@@ -82,13 +79,13 @@ def main() -> None:
     DEBUG_DIR.mkdir(parents=True, exist_ok=True)
     Toolkit.init_option(str(DEBUG_DIR))
 
-    with Scheduler.from_maa(
+    with App.from_maa(
         tasker=Tasker(),
         controller=create_adb_controller(),
         resource=load_resource(),
-    ) as scheduler:
-        scheduler.submit(Task("login", login_flow, priority=10))
-        scheduler.run(interval=100)
+    ) as app:
+        app.task("login", login_flow, priority=10).submit()
+        app.run(interval=100)
 
 
 if __name__ == "__main__":
