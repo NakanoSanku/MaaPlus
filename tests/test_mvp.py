@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from datetime import datetime, timedelta
 from threading import Event, Thread
 from types import SimpleNamespace
 
@@ -255,7 +256,7 @@ class SchedulerTests(unittest.TestCase):
         self.assertEqual(runtime.frames, 3)
         self.assertIsNone(scheduler.current)
 
-    def test_due_scheduled_task_preempts_current_task(self) -> None:
+    def test_due_after_task_preempts_current_task(self) -> None:
         runtime = FakeRuntime()
         scheduler = Scheduler(runtime)
         order: list[str] = []
@@ -268,7 +269,7 @@ class SchedulerTests(unittest.TestCase):
             normal_ticks += 1
             order.append(f"normal-{normal_ticks}")
             if normal_ticks == 1:
-                scheduler.schedule(timed, delay=0)
+                scheduler.after(timed, delay=0)
                 return True
             return False
 
@@ -276,6 +277,56 @@ class SchedulerTests(unittest.TestCase):
         scheduler.run()
 
         self.assertEqual(order, ["normal-1", "timed", "normal-2"])
+
+    def test_at_runs_wall_clock_task(self) -> None:
+        runtime = FakeRuntime()
+        scheduler = Scheduler(runtime)
+        ran = Event()
+        task = Task("at", lambda rt, image: ran.set() or False)
+
+        scheduler.at(task, when=datetime.now() + timedelta(milliseconds=10))
+        scheduler.run()
+
+        self.assertTrue(ran.is_set())
+        self.assertEqual(runtime.frames, 1)
+
+    def test_every_runs_repeatedly_until_stopped(self) -> None:
+        runtime = FakeRuntime()
+        scheduler = Scheduler(runtime)
+        ticks = 0
+
+        def flow(rt, image) -> bool:
+            nonlocal ticks
+            ticks += 1
+            if ticks == 3:
+                scheduler.stop()
+            return False
+
+        scheduler.every(Task("periodic", flow), interval=1)
+        scheduler.run()
+
+        self.assertEqual(ticks, 3)
+        self.assertEqual(runtime.frames, 3)
+        self.assertTrue(runtime.stopped)
+
+    def test_repeated_requests_for_same_task_coalesce_to_one_pending_execution(self) -> None:
+        runtime = FakeRuntime()
+        scheduler = Scheduler(runtime)
+        runs = 0
+
+        def flow(rt, image) -> bool:
+            nonlocal runs
+            runs += 1
+            return False
+
+        task = Task("coalesced", flow)
+        scheduler.submit(task)
+        scheduler.submit(task)
+        scheduler.submit(task)
+        scheduler.run()
+
+        self.assertEqual(runs, 2)
+        self.assertEqual(runtime.frames, 2)
 
     def test_equal_or_lower_priority_does_not_preempt_current_task(self) -> None:
         runtime = FakeRuntime()
@@ -299,13 +350,13 @@ class SchedulerTests(unittest.TestCase):
 
         self.assertEqual(order, ["primary-1", "primary-2", "equal"])
 
-    def test_future_scheduled_task_keeps_scheduler_alive_until_due(self) -> None:
+    def test_future_after_task_keeps_scheduler_alive_until_due(self) -> None:
         runtime = FakeRuntime()
         scheduler = Scheduler(runtime)
         ran = Event()
         task = Task("future", lambda rt, image: ran.set() or False, priority=10)
 
-        scheduler.schedule(task, delay=10)
+        scheduler.after(task, delay=10)
         scheduler.run()
 
         self.assertTrue(ran.is_set())
@@ -388,12 +439,14 @@ class SchedulerTests(unittest.TestCase):
         self.assertFalse(thread.is_alive())
         self.assertEqual(runtime.frames, 1)
 
-    def test_invalid_delay_and_interval_are_rejected(self) -> None:
+    def test_invalid_trigger_and_run_intervals_are_rejected(self) -> None:
         scheduler = Scheduler(FakeRuntime())
         task = Task("noop", lambda rt, image: False)
 
         with self.assertRaises(ValueError):
-            scheduler.schedule(task, delay=-1)
+            scheduler.after(task, delay=-1)
+        with self.assertRaises(ValueError):
+            scheduler.every(task, interval=0)
         with self.assertRaises(ValueError):
             scheduler.run(interval=-1)
 
