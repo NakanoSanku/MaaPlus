@@ -2,32 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Generic, Protocol, TypeVar
+from typing import Any, Generic, TypeVar
 
-from .routing import routed
-from .scheduler import Scheduler, Task
-from .tick import Tick, TickFlow, ticked
+from .routing import Navigator, routed
+from .scheduler import Scheduler
+from .task import Task, TaskHandler
 
 ContextT = TypeVar("ContextT")
-
-
-class Navigator(Protocol[ContextT]):
-    """High-level application navigator used by ``App``.
-
-    ``ensure()`` receives the current ``Tick``. Return ``True`` only when the current snapshot
-    already satisfies ``target``. Otherwise perform at most one navigation step and return
-    ``False`` so the result is observed from a fresh screenshot on the next tick.
-    """
-
-    def ensure(self, target: ContextT, tick: Tick) -> bool: ...
-
-
-@dataclass(frozen=True, slots=True)
-class _NavigatorAdapter(Generic[ContextT]):
-    navigator: Navigator[ContextT]
-
-    def ensure(self, target: ContextT, runtime: Any, image: Any) -> bool:
-        return self.navigator.ensure(target, Tick(runtime=runtime, image=image))
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,14 +36,14 @@ class TaskHandle:
 
 
 class App(Generic[ContextT]):
-    """Opinionated facade for the common MaaPlus application workflow.
+    """Opinionated facade for normal MaaPlus application development.
 
-    Application code normally defines ``flow(tick)`` callables and registers them through
-    ``task()``. ``App`` owns the mechanical Tick/Task/RoutedFlow/Scheduler composition while the
-    underlying low-level APIs remain available for advanced use.
+    Application code defines task handlers with ``handler(tick)`` and registers them through
+    ``task()``. ``App`` owns the mechanical Task/routing/Scheduler composition while the underlying
+    low-level APIs remain available for advanced use.
     """
 
-    __slots__ = ("scheduler", "navigator", "_navigator_adapter")
+    __slots__ = ("scheduler", "navigator")
 
     def __init__(
         self,
@@ -72,9 +53,6 @@ class App(Generic[ContextT]):
     ) -> None:
         self.scheduler = scheduler
         self.navigator = navigator
-        self._navigator_adapter = (
-            _NavigatorAdapter(navigator) if navigator is not None else None
-        )
 
     @classmethod
     def from_maa(
@@ -99,25 +77,25 @@ class App(Generic[ContextT]):
     def task(
         self,
         name: str,
-        flow: TickFlow,
+        handler: TaskHandler,
         *,
         context: ContextT | None = None,
         priority: int = 0,
     ) -> TaskHandle:
-        scheduler_flow = ticked(flow)
+        task_handler = handler
 
         if context is not None:
-            if self._navigator_adapter is None:
+            if self.navigator is None:
                 raise ValueError("context requires App(navigator=...)")
-            scheduler_flow = routed(
-                scheduler_flow,
+            task_handler = routed(
+                task_handler,
                 target=context,
-                navigator=self._navigator_adapter,
+                navigator=self.navigator,
             )
 
         return TaskHandle(
             scheduler=self.scheduler,
-            task=Task(name=name, flow=scheduler_flow, priority=priority),
+            task=Task(name=name, handler=task_handler, priority=priority),
         )
 
     @property
