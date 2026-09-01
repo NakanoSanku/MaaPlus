@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum, auto
 from heapq import heappop, heappush
 from itertools import count
 from threading import Condition
@@ -13,7 +14,21 @@ from .runtime import Runtime
 if TYPE_CHECKING:
     import numpy
 
-Flow = Callable[[Runtime, "numpy.ndarray"], bool]
+
+class FlowResult(Enum):
+    """Result of one flow tick.
+
+    ``CONTINUE`` keeps ownership of the external UI state and therefore blocks preemption.
+    ``YIELD`` keeps the execution alive but marks the current boundary as safe for preemption.
+    ``DONE`` completes the execution and releases ownership entirely.
+    """
+
+    CONTINUE = auto()
+    YIELD = auto()
+    DONE = auto()
+
+
+Flow = Callable[[Runtime, "numpy.ndarray"], FlowResult]
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -35,12 +50,13 @@ class _Schedule:
 
 
 class Scheduler:
-    """Priority scheduler with tick-boundary cooperative preemption."""
+    """Priority scheduler with explicit safe-point cooperative preemption."""
 
     __slots__ = (
         "runtime",
         "_condition",
         "_current",
+        "_current_yielded",
         "_paused",
         "_pending",
         "_ready",
@@ -55,6 +71,7 @@ class Scheduler:
         self.runtime = runtime
         self._condition = Condition()
         self._current: Task | None = None
+        self._current_yielded = False
         self._paused = False
         self._pending: set[Task] = set()
         self._ready: list[tuple[int, int, Task]] = []
@@ -136,16 +153,21 @@ class Scheduler:
         self._add_schedule(task, monotonic() + seconds, interval=seconds)
         return task
 
-    def tick(self, task: Task) -> bool:
+    def tick(self, task: Task) -> FlowResult:
         """Capture one fresh screenshot and execute one task decision tick."""
-        return task.flow(self.runtime, self.runtime.screenshot())
+        result = task.flow(self.runtime, self.runtime.screenshot())
+        if not isinstance(result, FlowResult):
+            raise TypeError(
+                f"Task {task.name!r} flow must return FlowResult, got {type(result).__name__}"
+            )
+        return result
 
     def run(self, *, interval: int = 0) -> None:
         """Run scheduled work until no work remains or ``stop()`` is called.
 
         ``interval`` is the minimum delay in milliseconds between consecutive ticks of the same
-        task. A newly selected or preempting task runs immediately. Preemption only happens between
-        ticks, never inside a flow call or gesture.
+        task. A newly selected or preempting task runs immediately. A higher-priority ready task
+        may preempt the current task only after that task explicitly returns ``FlowResult.YIELD``.
 
         A scheduler containing recurring ``every()`` work remains alive until ``stop()`` is called.
         """
@@ -166,14 +188,16 @@ class Scheduler:
                 if task is None:
                     break
 
-                keep_running = self.tick(task)
+                result = self.tick(task)
 
                 with self._condition:
-                    if self._current is task and not keep_running:
+                    if self._current is task and result is FlowResult.DONE:
                         self._current = None
+                        self._current_yielded = False
                         self._release_pending_locked(task)
                         delay = 0
-                    else:
+                    elif self._current is task:
+                        self._current_yielded = result is FlowResult.YIELD
                         delay = interval
                     self._condition.notify_all()
         finally:
@@ -272,9 +296,10 @@ class Scheduler:
     def _select_or_preempt_locked(self) -> bool:
         if self._current is None:
             self._current = self._pop_next_locked()
+            self._current_yielded = False
             return self._current is not None
 
-        if not self._ready:
+        if not self._current_yielded or not self._ready:
             return False
 
         candidate = self._ready[0][2]
@@ -283,6 +308,7 @@ class Scheduler:
 
         self._suspended.append(self._current)
         self._current = self._pop_ready_locked()
+        self._current_yielded = False
         return True
 
     def _pop_next_locked(self) -> Task | None:
