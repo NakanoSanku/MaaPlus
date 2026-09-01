@@ -11,9 +11,9 @@ MaaFramework owns recognition, resources, controllers, and native execution. Maa
 - `MatchResult` — thin wrapper around MaaFramework `RecognitionDetail`, adding truthiness and `click()`.
 - `Runtime` — screenshot, recognition, click, and swipe primitives.
 - `Task` — a named flow plus a priority.
-- `Scheduler` — ready queue, timed queue, cooperative preemption, pause/resume, and lifecycle.
+- `Scheduler` — priority selection, timed/recurring triggers, cooperative preemption, pause/resume, and lifecycle.
 
-There is no MaaPlus recognition schema, page-object layer, retry DSL, task graph, worker pool, or custom state machine.
+There is no MaaPlus recognition schema, page-object layer, retry DSL, task graph, worker pool, cron parser, or custom state machine.
 
 ## Installation
 
@@ -77,7 +77,7 @@ all match(..., image) calls use the same snapshot
 The flow returns:
 
 - `True` — this task still has work and may need another tick later.
-- `False` — this task is complete.
+- `False` — this execution is complete.
 
 Actions never replace the image inside the current tick. New UI state is evaluated only on a later tick with a fresh screenshot.
 
@@ -109,9 +109,9 @@ def login(runtime: Runtime, image) -> bool:
     return False
 ```
 
-## Tasks and priorities
+## Tasks and triggers
 
-A task only describes **what should run** and its scheduling priority:
+A `Task` describes **what should run** and its priority:
 
 ```python
 from maaplus import Task
@@ -120,23 +120,40 @@ normal = Task("daily", daily_flow, priority=10)
 timed = Task("timed-event", timed_event_flow, priority=100)
 ```
 
-Higher numeric priority wins.
-
-Submit immediate work with:
+Higher numeric priority wins. Trigger APIs only decide **when the task becomes ready**:
 
 ```python
-scheduler.submit(normal)
+scheduler.submit(normal)  # now
+scheduler.after(timed, delay=60_000)  # once, 60 seconds later
+scheduler.at(timed, when=target_datetime)  # once, wall-clock datetime
+scheduler.every(timed, interval=3_600_000)  # recurring, every hour
 ```
 
-Schedule one-shot delayed work in milliseconds with:
+All millisecond APIs use integers. `at()` accepts either a naive local `datetime` or an aware `datetime`; past datetimes become ready immediately.
 
-```python
-scheduler.schedule(timed, delay=60_000)
+`after()` and `at()` are one-shot. `every()` first triggers after one interval and then stays registered until the scheduler is stopped or discarded. A scheduler with recurring work therefore remains alive instead of returning merely because no task is ready right now.
+
+Recurring deadlines follow the original monotonic schedule timeline rather than `now + interval`, so late execution does not gradually shift the schedule. If several periods are missed, they coalesce into one execution request instead of being replayed as a backlog.
+
+## Coalescing
+
+The same `Task` object has at most one active execution plus one pending execution request.
+
+If a trigger fires while that task is already current, ready, or suspended, Scheduler does not add another copy to the queue. It records one pending request instead. Additional triggers while pending are merged into that same request.
+
+```text
+Task already active
+      ↓
+trigger #1 → pending
+trigger #2 → still one pending
+trigger #3 → still one pending
+      ↓
+active execution finishes
+      ↓
+one new execution becomes ready
 ```
 
-The MVP timed API is deliberately one-shot and delay-based. Wall-clock/cron recurrence can be layered on later without changing `Task` or preemption semantics.
-
-The scheduler waits for already-scheduled future work, and `run()` returns when no current, ready, suspended, or scheduled work remains.
+This applies to `submit()`, one-shot triggers, and recurring triggers. It prevents periodic work from building an unbounded backlog while the device is busy.
 
 ## Cooperative preemption
 
@@ -191,11 +208,12 @@ with Scheduler.from_maa(
     resource=resource,
 ) as scheduler:
     scheduler.submit(Task("daily", daily_flow, priority=10))
-    scheduler.schedule(Task("timed", timed_flow, priority=100), delay=60_000)
+    scheduler.after(Task("timed", timed_flow, priority=100), delay=60_000)
+    scheduler.every(Task("periodic", periodic_flow, priority=50), interval=3_600_000)
     scheduler.run(interval=100)
 ```
 
-`interval` is milliseconds between consecutive ticks of the **same** task. A newly selected or preempting task runs immediately.
+`interval` is milliseconds between consecutive ticks of the **same current task**. A newly selected or preempting task runs immediately.
 
 The scheduler exposes:
 
@@ -211,7 +229,7 @@ scheduler.stop()
 
 `pause()` does not interrupt the current tick; it blocks before the next screenshot. `resume()` continues scheduling from that boundary.
 
-`stop()` wakes paused/timed/interval waits and forwards stop to MaaFramework work in progress. Unfinished current/queued tasks remain on the scheduler object, so calling `run()` again can continue them; pause/resume is still the preferred mechanism for a temporary in-process pause.
+`stop()` wakes paused/timed/interval waits and forwards stop to MaaFramework work in progress. Unfinished current/queued work and registered recurring schedules remain on the scheduler object, so calling `run()` again can continue them; pause/resume is still the preferred mechanism for a temporary in-process pause.
 
 ## Task-local state
 
@@ -302,26 +320,26 @@ The total duration is distributed over the path intervals.
 ## Architecture
 
 ```text
-                         Scheduler
-          ┌─────────────────┼─────────────────┐
-          │                 │                 │
-      ready heap       timed heap      suspended stack
-          │                 │                 │
-          └─────────────────┼─────────────────┘
-                            ↓
-                       current Task
-                            ↓
-                     fresh screenshot
-                            ↓
-                  flow(runtime, image)
-                            ↓
-                         Runtime
-                   match / click / swipe
-                            ↓
-                       MaaFramework
+                          Scheduler
+      ┌──────────────────────┼──────────────────────┐
+      │                      │                      │
+  ready heap          trigger/timed heap      suspended stack
+      │                      │                      │
+      └──────────────────────┼──────────────────────┘
+                             ↓
+                        current Task
+                             ↓
+                      fresh screenshot
+                             ↓
+                   flow(runtime, image)
+                             ↓
+                          Runtime
+                    match / click / swipe
+                             ↓
+                        MaaFramework
 ```
 
-The scheduler owns **when and which task runs**. Runtime owns **how MaaFramework operations execute**. Flow owns **business decisions**.
+`Task` owns **what**. Trigger methods own **when**. Priority owns **which task runs first**. Preemption is only the consequence of those priority decisions.
 
 The rule remains: delete boilerplate, do not build a second automation framework.
 
