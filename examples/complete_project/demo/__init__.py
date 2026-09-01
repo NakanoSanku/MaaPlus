@@ -1,0 +1,1 @@
+"""Complete MaaPlus application example."""
