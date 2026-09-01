@@ -6,7 +6,7 @@ from threading import Event, Thread
 from types import SimpleNamespace
 
 from maa.pipeline import JOCR, JFeatureMatch, JRecognitionType, JTemplateMatch
-from maaplus import FlowResult, MatchResult, OCR, Runtime, Scheduler, Task, Template
+from maaplus import FlowResult, MatchResult, OCR, Runtime, Scheduler, Task, Template, routed
 
 
 def make_match(hit: bool, box=None, click=None) -> MatchResult:
@@ -39,6 +39,19 @@ class FakeRuntime:
 
     def stop(self) -> None:
         self.stopped = True
+
+
+class FakeNavigator:
+    def __init__(self, current: str) -> None:
+        self.current = current
+        self.transitions: list[tuple[str, str]] = []
+
+    def ensure(self, target, runtime, image) -> bool:
+        if self.current == target:
+            return True
+        self.transitions.append((self.current, target))
+        self.current = target
+        return False
 
 
 class FakeJob:
@@ -223,6 +236,68 @@ class RuntimeGestureTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             runtime.swipe([(0, 0)], 100)
+
+
+class RoutedFlowTests(unittest.TestCase):
+    def test_routed_flow_navigates_before_running_business_flow(self) -> None:
+        runtime = FakeRuntime()
+        navigator = FakeNavigator("explore")
+        calls: list[str] = []
+
+        flow = routed(
+            lambda rt, image: calls.append("draw") or FlowResult.DONE,
+            target="draw",
+            navigator=navigator,
+        )
+
+        self.assertIs(flow(runtime, object()), FlowResult.CONTINUE)
+        self.assertEqual(calls, [])
+        self.assertEqual(navigator.transitions, [("explore", "draw")])
+
+        self.assertIs(flow(runtime, object()), FlowResult.DONE)
+        self.assertEqual(calls, ["draw"])
+
+    def test_scheduler_routes_to_preempting_context_and_restores_suspended_context(self) -> None:
+        runtime = FakeRuntime()
+        navigator = FakeNavigator("explore")
+        scheduler = Scheduler(runtime)
+        order: list[str] = []
+        explore_ticks = 0
+
+        draw = Task(
+            "draw",
+            routed(
+                lambda rt, image: order.append("draw") or FlowResult.DONE,
+                target="draw",
+                navigator=navigator,
+            ),
+            priority=100,
+        )
+
+        def explore_flow(rt, image) -> FlowResult:
+            nonlocal explore_ticks
+            explore_ticks += 1
+            order.append(f"explore-{explore_ticks}")
+            if explore_ticks == 1:
+                scheduler.submit(draw)
+                return FlowResult.YIELD
+            return FlowResult.DONE
+
+        explore = Task(
+            "explore",
+            routed(explore_flow, target="explore", navigator=navigator),
+            priority=10,
+        )
+
+        scheduler.submit(explore)
+        scheduler.run()
+
+        self.assertEqual(order, ["explore-1", "draw", "explore-2"])
+        self.assertEqual(
+            navigator.transitions,
+            [("explore", "draw"), ("draw", "explore")],
+        )
+        self.assertEqual(runtime.frames, 5)
 
 
 class SchedulerTests(unittest.TestCase):
