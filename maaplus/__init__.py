@@ -4,9 +4,10 @@ from maa.pipeline import JRect as Rect
 from maa.pipeline import JTemplateMatch as Template
 
 from .runtime import MatchResult, Runtime
-from .scheduler import Scheduler, Task
+from .scheduler import FlowResult, Scheduler, Task
 
 __all__ = [
+    "FlowResult",
     "Locator",
     "MatchResult",
     "OCR",
