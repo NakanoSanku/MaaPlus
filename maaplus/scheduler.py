@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from heapq import heappop, heappush
 from itertools import count
 from threading import Condition
@@ -24,6 +25,15 @@ class Task:
     priority: int = 0
 
 
+@dataclass(slots=True)
+class _Schedule:
+    """Internal trigger that turns a task into ready work."""
+
+    task: Task
+    deadline: float
+    interval: float | None = None
+
+
 class Scheduler:
     """Priority scheduler with tick-boundary cooperative preemption."""
 
@@ -32,6 +42,7 @@ class Scheduler:
         "_condition",
         "_current",
         "_paused",
+        "_pending",
         "_ready",
         "_running",
         "_scheduled",
@@ -45,9 +56,10 @@ class Scheduler:
         self._condition = Condition()
         self._current: Task | None = None
         self._paused = False
+        self._pending: set[Task] = set()
         self._ready: list[tuple[int, int, Task]] = []
         self._running = False
-        self._scheduled: list[tuple[float, int, Task]] = []
+        self._scheduled: list[tuple[float, int, _Schedule]] = []
         self._sequence = count()
         self._stop_requested = False
         self._suspended: list[Task] = []
@@ -81,21 +93,47 @@ class Scheduler:
             return self._current
 
     def submit(self, task: Task) -> Task:
-        """Make a task ready to run immediately."""
+        """Request an immediate execution of ``task``.
+
+        A task already current, ready, or suspended is not duplicated. Repeated requests coalesce
+        into at most one pending execution that is released after the active execution completes.
+        """
         with self._condition:
-            self._push_ready_locked(task)
+            self._request_task_locked(task)
             self._condition.notify_all()
         return task
 
-    def schedule(self, task: Task, *, delay: int) -> Task:
-        """Make a task ready after ``delay`` milliseconds."""
+    def after(self, task: Task, *, delay: int) -> Task:
+        """Request one execution after ``delay`` milliseconds."""
         if delay < 0:
             raise ValueError("delay must be >= 0")
 
-        deadline = monotonic() + delay / 1000
-        with self._condition:
-            heappush(self._scheduled, (deadline, next(self._sequence), task))
-            self._condition.notify_all()
+        self._add_schedule(task, monotonic() + delay / 1000)
+        return task
+
+    def at(self, task: Task, *, when: datetime) -> Task:
+        """Request one execution at a wall-clock ``datetime``.
+
+        Naive datetimes are interpreted in the process local timezone. A past datetime is due
+        immediately. The wall-clock value is converted once to a monotonic deadline for waiting.
+        """
+        now = datetime.now(when.tzinfo) if when.tzinfo is not None else datetime.now()
+        delay = max(0.0, (when - now).total_seconds())
+        self._add_schedule(task, monotonic() + delay)
+        return task
+
+    def every(self, task: Task, *, interval: int) -> Task:
+        """Request recurring executions every ``interval`` milliseconds.
+
+        The first trigger happens after one interval. Recurrence follows the original monotonic
+        timeline instead of ``now + interval`` so late execution does not cause schedule drift.
+        Missed periods coalesce into one execution request.
+        """
+        if interval <= 0:
+            raise ValueError("interval must be > 0")
+
+        seconds = interval / 1000
+        self._add_schedule(task, monotonic() + seconds, interval=seconds)
         return task
 
     def tick(self, task: Task) -> bool:
@@ -108,6 +146,8 @@ class Scheduler:
         ``interval`` is the minimum delay in milliseconds between consecutive ticks of the same
         task. A newly selected or preempting task runs immediately. Preemption only happens between
         ticks, never inside a flow call or gesture.
+
+        A scheduler containing recurring ``every()`` work remains alive until ``stop()`` is called.
         """
         if interval < 0:
             raise ValueError("interval must be >= 0")
@@ -131,6 +171,7 @@ class Scheduler:
                 with self._condition:
                     if self._current is task and not keep_running:
                         self._current = None
+                        self._release_pending_locked(task)
                         delay = 0
                     else:
                         delay = interval
@@ -165,6 +206,12 @@ class Scheduler:
             self._paused = False
             self._condition.notify_all()
         self.runtime.stop()
+
+    def _add_schedule(self, task: Task, deadline: float, *, interval: float | None = None) -> None:
+        schedule = _Schedule(task=task, deadline=deadline, interval=interval)
+        with self._condition:
+            self._push_schedule_locked(schedule)
+            self._condition.notify_all()
 
     def _wait_for_task(self, interval: int) -> Task | None:
         delay = interval / 1000
@@ -212,8 +259,15 @@ class Scheduler:
     def _activate_due_locked(self) -> None:
         now = monotonic()
         while self._scheduled and self._scheduled[0][0] <= now:
-            _, _, task = heappop(self._scheduled)
-            self._push_ready_locked(task)
+            _, _, schedule = heappop(self._scheduled)
+            self._request_task_locked(schedule.task)
+
+            if schedule.interval is not None:
+                next_deadline = schedule.deadline + schedule.interval
+                while next_deadline <= now:
+                    next_deadline += schedule.interval
+                schedule.deadline = next_deadline
+                self._push_schedule_locked(schedule)
 
     def _select_or_preempt_locked(self) -> bool:
         if self._current is None:
@@ -241,12 +295,34 @@ class Scheduler:
             return self._suspended.pop()
         return self._pop_ready_locked()
 
+    def _request_task_locked(self, task: Task) -> None:
+        if self._task_active_locked(task):
+            self._pending.add(task)
+            return
+        self._push_ready_locked(task)
+
+    def _release_pending_locked(self, task: Task) -> None:
+        if task not in self._pending:
+            return
+        self._pending.remove(task)
+        self._push_ready_locked(task)
+
+    def _task_active_locked(self, task: Task) -> bool:
+        if self._current is task:
+            return True
+        if any(ready_task is task for _, _, ready_task in self._ready):
+            return True
+        return any(suspended_task is task for suspended_task in self._suspended)
+
     def _push_ready_locked(self, task: Task) -> None:
         heappush(self._ready, (-task.priority, next(self._sequence), task))
 
     def _pop_ready_locked(self) -> Task:
         _, _, task = heappop(self._ready)
         return task
+
+    def _push_schedule_locked(self, schedule: _Schedule) -> None:
+        heappush(self._scheduled, (schedule.deadline, next(self._sequence), schedule))
 
     def __enter__(self) -> Scheduler:
         return self
