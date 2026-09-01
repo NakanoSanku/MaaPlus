@@ -2,7 +2,7 @@
 
 MaaPlus is a minimal code-first layer on top of [MaaFramework](https://github.com/MaaXYZ/MaaFramework).
 
-MaaFramework owns recognition, resources, controllers, and native execution. MaaPlus adds a small synchronous runtime, `MatchResult` action sugar, a snapshot-driven flow protocol, and a priority scheduler with explicit safe-point preemption.
+MaaFramework owns recognition, resources, controllers, and native execution. MaaPlus adds a small synchronous runtime, `MatchResult` action sugar, a snapshot-driven flow protocol, optional routed-flow composition, and a priority scheduler with explicit safe-point preemption.
 
 ## Core API
 
@@ -13,6 +13,8 @@ MaaFramework owns recognition, resources, controllers, and native execution. Maa
 - `FlowResult` — one tick's scheduling result: `CONTINUE`, `YIELD`, or `DONE`.
 - `Task` — a named flow plus a priority.
 - `Scheduler` — priority selection, timed/recurring triggers, safe-point cooperative preemption, pause/resume, and lifecycle.
+- `Navigator` — application-defined protocol for restoring a required external UI context.
+- `RoutedFlow` / `routed()` — optional composition that restores a context before business flow execution.
 
 There is no MaaPlus recognition schema, page-object layer, retry DSL, task graph, worker pool, cron parser, global scene state machine, or custom business-state manager.
 
@@ -122,13 +124,13 @@ A running task temporarily owns the device's external UI state. A Python tick en
 | `YIELD` | unfinished | safe to hand off | yes |
 | `DONE` | complete | released | task ends |
 
-`CONTINUE` means the current task still owns the scene. This is appropriate for states such as an active battle, a transaction sequence, a login transition, or any other flow-private UI that another task is not expected to understand.
+`CONTINUE` means the current task still owns the scene. This is appropriate for states such as an active battle, a transaction sequence, a login transition, or any other flow-private UI that another task or navigator is not expected to recover from.
 
-`YIELD` means the execution still has work, but the current scene is a safe handoff point. If a strictly higher-priority task is ready, Scheduler may suspend the current task there. If no higher-priority task is ready, the same task simply receives another tick.
+`YIELD` means the execution still has work, but the current external state is safe for another task's navigation layer to take over. If a strictly higher-priority task is ready, Scheduler may suspend the current task there. If no higher-priority task is ready, the same task simply receives another tick.
 
-`DONE` means this execution is complete and releases device ownership. A flow should return `DONE` only from a state that is safe to leave behind for whatever task Scheduler may choose next.
+`DONE` means this execution is complete and releases device ownership. It does not require every future task to directly recognize the current page; it requires the page to be a safe handoff state from which the application's navigation layer can continue.
 
-MaaPlus deliberately does not define what a safe scene is. One application may use a home screen, another may use a lobby or idle screen. The scheduler records only whether the current flow yielded; it does not know about `HOME`, `BATTLE`, `SHOP`, or any other business scene.
+MaaPlus deliberately does not define what a safe scene is. One application may use a home screen, another may allow several stable pages such as lobby, explore, shop, or draw. The scheduler records only whether the current flow yielded; it does not know about `HOME`, `BATTLE`, `SHOP`, or any other business scene.
 
 A typical game flow can therefore express:
 
@@ -136,7 +138,7 @@ A typical game flow can therefore express:
 from maaplus import FlowResult
 
 
-def daily(runtime, image) -> FlowResult:
+def explore(runtime, image) -> FlowResult:
     if is_battle_running(runtime, image):
         play_battle(runtime, image)
         return FlowResult.CONTINUE
@@ -145,12 +147,12 @@ def daily(runtime, image) -> FlowResult:
         close_result(runtime, image)
         return FlowResult.CONTINUE
 
-    if is_home(runtime, image):
-        if daily_finished():
+    if is_explore_page(runtime, image):
+        if explore_finished():
             return FlowResult.DONE
         return FlowResult.YIELD
 
-    recover_known_scene(runtime, image)
+    recover_explore_private_state(runtime, image)
     return FlowResult.CONTINUE
 ```
 
@@ -163,6 +165,117 @@ safe preemption point
 ```
 
 Only an explicit `YIELD` creates a safe preemption point for an unfinished execution.
+
+## Routed flows and context restoration
+
+A safe handoff state does not have to be the next task's business page.
+
+For example, an exploration task may safely yield while still on the exploration page. A timed draw task can then take over, navigate from exploration to the draw page, do its work, and finish there. When exploration resumes, it must navigate from the draw page back to exploration before its business flow continues.
+
+MaaPlus keeps this concern out of `Scheduler`. The optional `Navigator` / `RoutedFlow` composition handles it.
+
+A navigator implements one method:
+
+```python
+navigator.ensure(target, runtime, image) -> bool
+```
+
+The contract is snapshot-based:
+
+- return `True` only when the supplied snapshot already satisfies `target`; the wrapped business flow may run in the same tick;
+- otherwise, optionally perform one navigation action based on that snapshot and return `False`;
+- after `False`, `RoutedFlow` returns `FlowResult.CONTINUE`, so the navigation result is observed on a fresh screenshot during a later tick.
+
+The context type is application-defined. It can be an enum, string, dataclass, or any other object meaningful to the application.
+
+```python
+from enum import Enum, auto
+
+from maaplus import FlowResult, Task, routed
+
+
+class Scene(Enum):
+    EXPLORE = auto()
+    DRAW = auto()
+
+
+class GameNavigator:
+    def ensure(self, target: Scene, runtime, image) -> bool:
+        if target is Scene.EXPLORE:
+            if is_explore(runtime, image):
+                return True
+            navigate_one_step_toward_explore(runtime, image)
+            return False
+
+        if target is Scene.DRAW:
+            if is_draw(runtime, image):
+                return True
+            navigate_one_step_toward_draw(runtime, image)
+            return False
+
+        raise ValueError(f"Unsupported scene: {target}")
+
+
+navigator = GameNavigator()
+
+explore_task = Task(
+    "explore",
+    routed(ExploreFlow(), target=Scene.EXPLORE, navigator=navigator),
+    priority=10,
+)
+
+draw_task = Task(
+    "draw",
+    routed(DrawFlow(), target=Scene.DRAW, navigator=navigator),
+    priority=100,
+)
+```
+
+The resulting handoff is:
+
+```text
+ExploreFlow: battle
+      ↓
+CONTINUE
+      ↓
+Draw task becomes ready
+      ↓
+ExploreFlow finishes battle and reaches stable explore page
+      ↓
+YIELD
+      ↓
+Scheduler suspends Explore task
+      ↓
+Draw RoutedFlow
+      ↓
+Navigator.ensure(DRAW): EXPLORE → ... → DRAW
+      ↓
+DrawFlow runs
+      ↓
+DONE on stable draw page
+      ↓
+Scheduler resumes Explore task
+      ↓
+Explore RoutedFlow
+      ↓
+Navigator.ensure(EXPLORE): DRAW → ... → EXPLORE
+      ↓
+original ExploreFlow object continues with its saved Python state
+```
+
+Navigation ticks deliberately return `CONTINUE`. This conservatively keeps device ownership with the task while it is between contexts. Once the required context is reached, the wrapped business flow again decides whether the next boundary is `CONTINUE`, `YIELD`, or `DONE`.
+
+`Navigator` does not require a scene graph or global current-scene variable. An application can implement direct recognition rules, a hub-based strategy, a graph router, or any other navigation policy behind `ensure()`. Screenshot recognition remains the source of truth.
+
+This keeps the two responsibilities orthogonal:
+
+```text
+FlowResult
+    → may another execution take ownership now?
+
+Navigator / RoutedFlow
+    → after ownership changes, how does this execution restore its required context?
+```
 
 ## Tasks and triggers
 
@@ -225,20 +338,18 @@ normal tick #2: battle still running
       ↓
 returns CONTINUE
       ↓
-normal tick #3: back at safe home scene
+normal tick #3: back at handoff-safe scene
       ↓
 returns YIELD
       ↓
 normal is suspended
       ↓
-timed task runs
+timed task runs or restores its required context
       ↓
 timed returns DONE
       ↓
-normal resumes with a fresh screenshot
+normal resumes with a fresh screenshot and restores its own context if needed
 ```
-
-This prevents a newly selected task from inheriting an arbitrary flow-private scene that it cannot recognize or recover from.
 
 Only a **strictly higher** priority task preempts a yielded current task. Equal-priority tasks wait instead of causing task switching.
 
@@ -309,7 +420,7 @@ class DailyFlow:
         self.step = 0
 
     def __call__(self, runtime: Runtime, image) -> FlowResult:
-        # self.step survives normal ticks and scheduler preemption.
+        # self.step survives normal ticks, navigation, and scheduler preemption.
         ...
         return FlowResult.CONTINUE
 
@@ -328,9 +439,12 @@ Current UI scene
 
 Whether the UI may be handed to another task
     → expressed by FlowResult.YIELD / DONE
+
+How a task restores its required UI context
+    → application Navigator wrapped by RoutedFlow
 ```
 
-MaaPlus does not add a global `GameState` or scene registry. Screenshot recognition remains the source of truth for the external world, while `FlowResult` only expresses the ownership boundary needed by Scheduler.
+MaaPlus does not add a global `GameState` or scene registry. Screenshot recognition remains the source of truth for the external world.
 
 ## MatchResult
 
@@ -413,9 +527,11 @@ The total duration is distributed over the path intervals.
                              ↓
                       fresh screenshot
                              ↓
-                   flow(runtime, image)
-                             ↓
-                CONTINUE / YIELD / DONE
+                   optional RoutedFlow
+                    /              \
+          Navigator.ensure       business Flow
+                    \              /
+                     CONTINUE / YIELD / DONE
                              ↓
                           Runtime
                     match / click / swipe
@@ -423,7 +539,7 @@ The total duration is distributed over the path intervals.
                         MaaFramework
 ```
 
-`Task` owns **what**. Trigger methods own **when**. Priority owns **who wants to run first**. `FlowResult.YIELD` owns **when an unfinished task may actually hand over the device**. Preemption is the consequence of both priority and an explicit safe handoff point.
+`Task` owns **what**. Trigger methods own **when**. Priority owns **who wants to run first**. `FlowResult.YIELD` owns **when an unfinished task may hand over the device**. `RoutedFlow` owns **how an execution restores its required context after selection or resume**. Scheduler remains unaware of business scenes.
 
 The rule remains: delete boilerplate, do not build a second automation framework.
 
