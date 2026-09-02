@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -30,6 +31,10 @@ if TYPE_CHECKING:
     import numpy
 
     from maa.define import RecognitionDetail
+
+logger = logging.getLogger(__name__)
+recognition_logger = logging.getLogger(f"{__name__}.recognition")
+controller_logger = logging.getLogger(f"{__name__}.controller")
 
 
 _RECOGNITION_TYPES: dict[type[Any], JRecognitionType] = {
@@ -121,19 +126,40 @@ class Runtime:
 
     def screenshot(self) -> numpy.ndarray:
         """Capture a fresh screenshot."""
+        started = time.perf_counter()
         job = self.controller.post_screencap().wait()
+        elapsed_ms = (time.perf_counter() - started) * 1000
         if not job.succeeded:
+            logger.error("screenshot failed elapsed_ms=%.1f", elapsed_ms)
             raise RuntimeError("MaaFramework screencap failed")
-        return job.get()
+
+        image = job.get()
+        logger.debug("screenshot captured elapsed_ms=%.1f", elapsed_ms)
+        return image
 
     def match(self, locator: JRecognitionParam, image: numpy.ndarray) -> MatchResult:
         """Run a MaaFramework recognition parameter against the supplied screenshot."""
-        job = self.tasker.post_recognition(_recognition_type(locator), locator, image).wait()
+        recognition_type = _recognition_type(locator)
+        type_name = getattr(recognition_type, "name", str(recognition_type))
+        started = time.perf_counter()
+        job = self.tasker.post_recognition(recognition_type, locator, image).wait()
         if not job.succeeded:
+            elapsed_ms = (time.perf_counter() - started) * 1000
+            recognition_logger.error(
+                "recognition failed type=%s locator=%r elapsed_ms=%.1f",
+                type_name,
+                locator,
+                elapsed_ms,
+            )
             raise RuntimeError(f"MaaFramework recognition failed: {locator!r}")
 
         task_detail = job.get()
         if task_detail is None:
+            recognition_logger.error(
+                "recognition returned no task detail type=%s locator=%r",
+                type_name,
+                locator,
+            )
             raise RuntimeError("MaaFramework recognition returned no task detail")
 
         recognition = next(
@@ -141,13 +167,28 @@ class Runtime:
             None,
         )
         if recognition is None:
+            recognition_logger.error(
+                "recognition returned no detail type=%s locator=%r",
+                type_name,
+                locator,
+            )
             raise RuntimeError("MaaFramework recognition returned no recognition detail")
 
-        return MatchResult(
+        result = MatchResult(
             recognition,
             self.click,
             self.interaction.click.resolver,
         )
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        recognition_logger.debug(
+            "recognition type=%s locator=%r hit=%s box=%s elapsed_ms=%.1f",
+            type_name,
+            locator,
+            result.hit,
+            result.box,
+            elapsed_ms,
+        )
+        return result
 
     def click(
         self,
@@ -170,6 +211,14 @@ class Runtime:
         post_delay_ms = resolve_timing(
             config.post_delay if post_delay is None else post_delay,
             name="click post_delay",
+        )
+
+        controller_logger.debug(
+            "click point=%s duration_ms=%d pre_delay_ms=%d post_delay_ms=%d",
+            point,
+            duration_ms,
+            pre_delay_ms,
+            post_delay_ms,
         )
 
         self._sleep(pre_delay_ms)
@@ -217,6 +266,15 @@ class Runtime:
         if len(path) < 2:
             raise ValueError("swipe interpolation must return at least two points")
 
+        controller_logger.debug(
+            "swipe points=%s path=%s duration_ms=%d pre_delay_ms=%d post_delay_ms=%d",
+            raw_path,
+            path,
+            duration_ms,
+            pre_delay_ms,
+            post_delay_ms,
+        )
+
         self._sleep(pre_delay_ms)
         self._wait_action_interval()
 
@@ -247,6 +305,11 @@ class Runtime:
         )
         remaining = interval_ms / 1000 - (time.monotonic() - self._last_input_end)
         if remaining > 0:
+            controller_logger.debug(
+                "action interval wait interval_ms=%d remaining_ms=%.1f",
+                interval_ms,
+                remaining * 1000,
+            )
             time.sleep(remaining)
 
     @staticmethod
@@ -258,22 +321,28 @@ class Runtime:
         x, y = point
         job = self.controller.post_touch_down(x, y).wait()
         if not job.succeeded:
+            controller_logger.error("touch down failed point=%s", point)
             raise RuntimeError(f"MaaFramework touch down failed at ({x}, {y})")
 
     def _touch_move(self, point: Point) -> None:
         x, y = point
         job = self.controller.post_touch_move(x, y).wait()
         if not job.succeeded:
+            controller_logger.error("touch move failed point=%s", point)
             raise RuntimeError(f"MaaFramework touch move failed at ({x}, {y})")
 
     def _touch_up(self) -> None:
         job = self.controller.post_touch_up().wait()
         if not job.succeeded:
+            controller_logger.error("touch up failed")
             raise RuntimeError("MaaFramework touch up failed")
 
     def stop(self) -> None:
         if not getattr(self.tasker, "running", False):
             return
+        logger.info("tasker stop requested")
         job = self.tasker.post_stop().wait()
         if not job.succeeded:
+            logger.error("tasker stop failed")
             raise RuntimeError("MaaFramework tasker stop failed")
+        logger.info("tasker stopped")
