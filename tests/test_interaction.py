@@ -147,7 +147,8 @@ class RuntimeInteractionTests(unittest.TestCase):
         ):
             runtime.click((1, 2))
 
-        sleep.assert_called_once_with(0.08)
+        sleep.assert_called_once()
+        self.assertAlmostEqual(sleep.call_args.args[0], 0.08)
 
     def test_swipe_uses_configured_interpolation(self) -> None:
         controller = FakeController()
