@@ -12,8 +12,8 @@ from maaplus import (
     ClickConfig,
     InteractionConfig,
     SwipeConfig,
-    click,
-    swipe,
+    path,
+    point,
     timing,
 )
 
@@ -26,7 +26,7 @@ DEBUG_DIR = ROOT / ".debug"
 
 INTERACTION = InteractionConfig(
     click=ClickConfig(
-        resolver=click.random(padding=0.15),
+        resolver=point.random(padding=0.15),
         duration=timing.random(40, 90),
         pre_delay=timing.random(80, 150),
         post_delay=timing.random(250, 450),
@@ -34,7 +34,7 @@ INTERACTION = InteractionConfig(
     swipe=SwipeConfig(
         duration=timing.random(300, 500),
         post_delay=timing.random(250, 400),
-        interpolation=swipe.ease_in_out(samples=20),
+        interpolation=path.ease_in_out(samples=20),
     ),
     action_interval=timing.random(60, 120),
 )
