@@ -10,6 +10,7 @@ from maaplus import (
     InteractionConfig,
     Runtime,
     SwipeConfig,
+    Tick,
     click,
     swipe,
     timing,
@@ -80,19 +81,25 @@ class TimingTests(unittest.TestCase):
 
 class ClickStrategyTests(unittest.TestCase):
     def test_random_click_respects_padding(self) -> None:
-        result = SimpleNamespace(box=(100, 200, 100, 80))
+        area = (100, 200, 100, 80)
         resolver = click.random(padding=0.15)
 
         for _ in range(100):
-            x, y = resolver(result)
+            x, y = resolver(area)
             self.assertGreaterEqual(x, 115)
             self.assertLessEqual(x, 184)
             self.assertGreaterEqual(y, 212)
             self.assertLessEqual(y, 267)
 
     def test_relative_click_resolves_expected_point(self) -> None:
-        result = SimpleNamespace(box=(10, 20, 11, 21))
-        self.assertEqual(click.relative(0.5, 0.5)(result), (15, 30))
+        self.assertEqual(click.relative(0.5, 0.5)((10, 20, 11, 21)), (15, 30))
+
+    def test_center_click_accepts_plain_area(self) -> None:
+        self.assertEqual(click.center((10, 20, 30, 40)), (25, 40))
+
+    def test_click_strategy_rejects_empty_area(self) -> None:
+        with self.assertRaises(ValueError):
+            click.center((10, 20, 0, 40))
 
 
 class RuntimeInteractionTests(unittest.TestCase):
@@ -129,6 +136,70 @@ class RuntimeInteractionTests(unittest.TestCase):
             runtime.click((1, 2), duration=0, pre_delay=0, post_delay=0)
 
         sleep.assert_not_called()
+
+    def test_exact_click_does_not_use_area_resolver(self) -> None:
+        def fail_if_called(area):
+            raise AssertionError(f"unexpected area resolver call: {area}")
+
+        controller = FakeController()
+        runtime = Runtime(
+            tasker=SimpleNamespace(running=False),
+            controller=controller,
+            interaction=InteractionConfig(
+                click=ClickConfig(resolver=fail_if_called, duration=0),
+            ),
+        )
+
+        runtime.click((12, 34))
+
+        self.assertEqual(controller.events, [("down", 12, 34), ("up",)])
+
+    def test_click_area_uses_default_click_resolver(self) -> None:
+        controller = FakeController()
+        runtime = Runtime(
+            tasker=SimpleNamespace(running=False),
+            controller=controller,
+            interaction=InteractionConfig(
+                click=ClickConfig(
+                    resolver=click.relative(1.0, 1.0),
+                    duration=0,
+                ),
+            ),
+        )
+
+        runtime.click_area((10, 20, 30, 40))
+
+        self.assertEqual(controller.events, [("down", 39, 59), ("up",)])
+
+    def test_click_area_can_override_resolver(self) -> None:
+        controller = FakeController()
+        runtime = Runtime(
+            tasker=SimpleNamespace(running=False),
+            controller=controller,
+            interaction=InteractionConfig(
+                click=ClickConfig(
+                    resolver=click.relative(1.0, 1.0),
+                    duration=0,
+                ),
+            ),
+        )
+
+        runtime.click_area((10, 20, 30, 40), resolver=click.center)
+
+        self.assertEqual(controller.events, [("down", 25, 40), ("up",)])
+
+    def test_tick_click_area_forwards_to_runtime(self) -> None:
+        controller = FakeController()
+        runtime = Runtime(
+            tasker=SimpleNamespace(running=False),
+            controller=controller,
+            interaction=InteractionConfig(click=ClickConfig(duration=0)),
+        )
+        tick = Tick(runtime=runtime, image=object())
+
+        tick.click_area((10, 20, 30, 40))
+
+        self.assertEqual(controller.events, [("down", 25, 40), ("up",)])
 
     def test_action_interval_limits_consecutive_inputs(self) -> None:
         runtime = Runtime(
