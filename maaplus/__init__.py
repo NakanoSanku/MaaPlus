@@ -1,11 +1,10 @@
 from maa.pipeline import JOCR as OCR
 from maa.pipeline import JRecognitionParam as Locator
-from maa.pipeline import JRect as Rect
 from maa.pipeline import JTemplateMatch as Template
 
 from . import path, point, timing
 from .app import App, TaskHandle
-from .geometry import PathInterpolator, Point, PointResolver
+from .geometry import PathInterpolator, Point, PointResolver, Rect
 from .interaction import ClickConfig, InteractionConfig, SwipeConfig
 from .routing import Navigator, RoutedTaskHandler, routed
 from .runtime import MatchResult, Runtime
