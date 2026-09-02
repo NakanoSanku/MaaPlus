@@ -3,9 +3,9 @@ from maa.pipeline import JRecognitionParam as Locator
 from maa.pipeline import JRect as Rect
 from maa.pipeline import JTemplateMatch as Template
 
-from . import click, swipe, timing
+from . import path, point, timing
 from .app import App, TaskHandle
-from .click import ClickResolver, Point
+from .geometry import PathInterpolator, Point, PointResolver
 from .interaction import ClickConfig, InteractionConfig, SwipeConfig
 from .routing import Navigator, RoutedTaskHandler, routed
 from .runtime import MatchResult, Runtime
@@ -21,7 +21,6 @@ DONE = TaskResult.DONE
 __all__ = [
     "App",
     "ClickConfig",
-    "ClickResolver",
     "CONTINUE",
     "DONE",
     "InteractionConfig",
@@ -29,7 +28,9 @@ __all__ = [
     "MatchResult",
     "Navigator",
     "OCR",
+    "PathInterpolator",
     "Point",
+    "PointResolver",
     "Rect",
     "RoutedTaskHandler",
     "Runtime",
@@ -44,8 +45,8 @@ __all__ = [
     "Timing",
     "TimingResolver",
     "YIELD",
-    "click",
+    "path",
+    "point",
     "routed",
-    "swipe",
     "timing",
 ]
