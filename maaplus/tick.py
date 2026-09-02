@@ -6,9 +6,8 @@ from typing import TYPE_CHECKING
 
 from maa.pipeline import JRecognitionParam
 
-from .click import ClickResolver, Point, Rect
+from .geometry import PathInterpolator, Point, PointResolver, Rect
 from .runtime import MatchResult, Runtime
-from .swipe import SwipeInterpolator
 from .timing import Timing
 
 if TYPE_CHECKING:
@@ -54,7 +53,7 @@ class Tick:
     def click_area(
         self,
         area: Rect,
-        resolver: ClickResolver | None = None,
+        resolver: PointResolver | None = None,
         duration: Timing | None = None,
         *,
         pre_delay: Timing | None = None,
@@ -76,7 +75,7 @@ class Tick:
         *,
         pre_delay: Timing | None = None,
         post_delay: Timing | None = None,
-        interpolation: SwipeInterpolator | None = None,
+        interpolation: PathInterpolator | None = None,
     ) -> bool:
         if pre_delay is None and post_delay is None and interpolation is None:
             if duration is None:
