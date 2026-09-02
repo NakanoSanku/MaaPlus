@@ -8,6 +8,7 @@ from threading import Condition
 from time import monotonic
 from typing import Any
 
+from .interaction import InteractionConfig
 from .runtime import Runtime
 from .task import Task, TaskResult
 from .tick import Tick
@@ -62,10 +63,18 @@ class Scheduler:
         controller: Any,
         resource: Any,
         bind: bool = True,
+        interaction: InteractionConfig | None = None,
     ) -> Scheduler:
         if bind and not tasker.bind(resource, controller):
             raise RuntimeError("Failed to bind MaaFramework resource/controller to tasker")
-        return cls(Runtime(tasker=tasker, controller=controller, resource=resource))
+        return cls(
+            Runtime(
+                tasker=tasker,
+                controller=controller,
+                resource=resource,
+                interaction=interaction,
+            )
+        )
 
     @property
     def running(self) -> bool:
