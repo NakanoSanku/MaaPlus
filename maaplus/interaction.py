@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .click import ClickResolver, center
-from .swipe import SwipeInterpolator, direct
+from .geometry import PathInterpolator, PointResolver
+from .path import direct
+from .point import center
 from .timing import Timing
 
 
@@ -11,7 +12,7 @@ from .timing import Timing
 class ClickConfig:
     """Default behavior for click actions."""
 
-    resolver: ClickResolver = center
+    resolver: PointResolver = center
     duration: Timing = 50
     pre_delay: Timing = 0
     post_delay: Timing = 0
@@ -24,7 +25,7 @@ class SwipeConfig:
     duration: Timing = 300
     pre_delay: Timing = 0
     post_delay: Timing = 0
-    interpolation: SwipeInterpolator = direct
+    interpolation: PathInterpolator = direct
 
 
 @dataclass(frozen=True, slots=True)
