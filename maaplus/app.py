@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Generic, TypeVar
@@ -10,6 +11,7 @@ from .scheduler import Scheduler
 from .task import Task, TaskHandler
 
 ContextT = TypeVar("ContextT")
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,9 +98,16 @@ class App(Generic[ContextT]):
                 navigator=self.navigator,
             )
 
+        task = Task(name=name, handler=task_handler, priority=priority)
+        logger.debug(
+            "task registered task=%s priority=%d context=%r",
+            name,
+            priority,
+            context,
+        )
         return TaskHandle(
             scheduler=self.scheduler,
-            task=Task(name=name, handler=task_handler, priority=priority),
+            task=task,
         )
 
     @property
