@@ -5,6 +5,7 @@ from maa.pipeline import JTemplateMatch as Template
 
 from . import click, swipe, timing
 from .app import App, TaskHandle
+from .click import ClickResolver, Point
 from .interaction import ClickConfig, InteractionConfig, SwipeConfig
 from .routing import Navigator, RoutedTaskHandler, routed
 from .runtime import MatchResult, Runtime
@@ -20,6 +21,7 @@ DONE = TaskResult.DONE
 __all__ = [
     "App",
     "ClickConfig",
+    "ClickResolver",
     "CONTINUE",
     "DONE",
     "InteractionConfig",
@@ -27,6 +29,7 @@ __all__ = [
     "MatchResult",
     "Navigator",
     "OCR",
+    "Point",
     "Rect",
     "RoutedTaskHandler",
     "Runtime",
