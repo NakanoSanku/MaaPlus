@@ -2,7 +2,7 @@ from . import path, point, timing
 from .app import App, TaskHandle
 from .geometry import PathInterpolator, Point, PointResolver, Rect
 from .interaction import ClickConfig, InteractionConfig, SwipeConfig
-from .locator import FirstOf, Locator, OCR, Template
+from .locator import AllOf, FirstOf, Locator, OCR, Template
 from .routing import Navigator, RoutedTaskHandler, routed
 from .runtime import MatchResult, Runtime
 from .scheduler import Scheduler
@@ -15,6 +15,7 @@ YIELD = TaskResult.YIELD
 DONE = TaskResult.DONE
 
 __all__ = [
+    "AllOf",
     "App",
     "ClickConfig",
     "CONTINUE",
