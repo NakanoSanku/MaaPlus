@@ -6,23 +6,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, cast
 
-from maa.pipeline import (
-    JAnd,
-    JColorMatch,
-    JCustomRecognition,
-    JDirectHit,
-    JFeatureMatch,
-    JNeuralNetworkClassify,
-    JNeuralNetworkDetect,
-    JOCR,
-    JOr,
-    JRecognitionParam,
-    JRecognitionType,
-    JTemplateMatch,
-)
-
 from .geometry import PathInterpolator, Point, PointResolver, Rect
 from .interaction import InteractionConfig
+from .locator import Locator, recognition_type
 from .timing import Timing, resolve as resolve_timing
 
 if TYPE_CHECKING:
@@ -33,27 +19,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 recognition_logger = logging.getLogger(f"{__name__}.recognition")
 controller_logger = logging.getLogger(f"{__name__}.controller")
-
-
-_RECOGNITION_TYPES: dict[type[Any], JRecognitionType] = {
-    JDirectHit: JRecognitionType.DirectHit,
-    JTemplateMatch: JRecognitionType.TemplateMatch,
-    JFeatureMatch: JRecognitionType.FeatureMatch,
-    JColorMatch: JRecognitionType.ColorMatch,
-    JOCR: JRecognitionType.OCR,
-    JNeuralNetworkClassify: JRecognitionType.NeuralNetworkClassify,
-    JNeuralNetworkDetect: JRecognitionType.NeuralNetworkDetect,
-    JAnd: JRecognitionType.And,
-    JOr: JRecognitionType.Or,
-    JCustomRecognition: JRecognitionType.Custom,
-}
-
-
-def _recognition_type(locator: JRecognitionParam) -> JRecognitionType:
-    try:
-        return _RECOGNITION_TYPES[type(locator)]
-    except KeyError as exc:
-        raise TypeError(f"Unsupported recognition parameter: {type(locator).__name__}") from exc
 
 
 @dataclass(slots=True)
@@ -133,12 +98,12 @@ class Runtime:
         logger.debug("screenshot captured elapsed_ms=%.1f", elapsed_ms)
         return image
 
-    def match(self, locator: JRecognitionParam, image: numpy.ndarray) -> MatchResult:
+    def match(self, locator: Locator, image: numpy.ndarray) -> MatchResult:
         """Run a MaaFramework recognition parameter against the supplied screenshot."""
-        recognition_type = _recognition_type(locator)
-        type_name = getattr(recognition_type, "name", str(recognition_type))
+        reco_type = recognition_type(locator)
+        type_name = getattr(reco_type, "name", str(reco_type))
         started = time.perf_counter()
-        job = self.tasker.post_recognition(recognition_type, locator, image).wait()
+        job = self.tasker.post_recognition(reco_type, locator, image).wait()
         if not job.succeeded:
             elapsed_ms = (time.perf_counter() - started) * 1000
             recognition_logger.error(
