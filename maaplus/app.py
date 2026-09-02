@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Generic, TypeVar
 
+from .interaction import InteractionConfig
 from .routing import Navigator, routed
 from .scheduler import Scheduler
 from .task import Task, TaskHandler
@@ -63,6 +64,7 @@ class App(Generic[ContextT]):
         resource: Any,
         navigator: Navigator[ContextT] | None = None,
         bind: bool = True,
+        interaction: InteractionConfig | None = None,
     ) -> App[ContextT]:
         return cls(
             Scheduler.from_maa(
@@ -70,6 +72,7 @@ class App(Generic[ContextT]):
                 controller=controller,
                 resource=resource,
                 bind=bind,
+                interaction=interaction,
             ),
             navigator=navigator,
         )
