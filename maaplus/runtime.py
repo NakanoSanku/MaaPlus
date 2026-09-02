@@ -18,11 +18,10 @@ from maa.pipeline import (
     JOr,
     JRecognitionParam,
     JRecognitionType,
-    JRect,
     JTemplateMatch,
 )
 
-from .click import ClickResolver, Point, center
+from .click import ClickResolver, Point, Rect
 from .interaction import InteractionConfig
 from .swipe import SwipeInterpolator
 from .timing import Timing, resolve as resolve_timing
@@ -63,18 +62,17 @@ class MatchResult:
     """MaaFramework recognition result with click sugar."""
 
     detail: RecognitionDetail
-    _click: Callable[..., bool] | None = field(default=None, repr=False)
-    _click_resolver: ClickResolver = field(default=center, repr=False)
+    _click_area: Callable[..., bool] | None = field(default=None, repr=False)
 
     @property
     def hit(self) -> bool:
         return bool(self.detail.hit)
 
     @property
-    def box(self) -> JRect | None:
+    def box(self) -> Rect | None:
         if self.detail.box is None:
             return None
-        return cast(JRect, tuple(self.detail.box))
+        return cast(Rect, tuple(self.detail.box))
 
     def __bool__(self) -> bool:
         return self.hit
@@ -87,19 +85,18 @@ class MatchResult:
         pre_delay: Timing | None = None,
         post_delay: Timing | None = None,
     ) -> bool:
-        if not self.hit or self._click is None:
+        """Click the recognition box through the runtime area-click policy."""
+        if not self.hit or self._click_area is None:
             return False
 
-        point = (resolver or self._click_resolver)(self)
+        box = self.box
+        if box is None:
+            return False
 
-        if pre_delay is None and post_delay is None:
-            if duration is None:
-                return self._click(point)
-            return self._click(point, duration)
-
-        return self._click(
-            point,
-            duration,
+        return self._click_area(
+            box,
+            resolver=resolver,
+            duration=duration,
             pre_delay=pre_delay,
             post_delay=post_delay,
         )
@@ -174,11 +171,7 @@ class Runtime:
             )
             raise RuntimeError("MaaFramework recognition returned no recognition detail")
 
-        result = MatchResult(
-            recognition,
-            self.click,
-            self.interaction.click.resolver,
-        )
+        result = MatchResult(recognition, self.click_area)
         elapsed_ms = (time.perf_counter() - started) * 1000
         recognition_logger.debug(
             "recognition type=%s locator=%r hit=%s box=%s elapsed_ms=%.1f",
@@ -190,6 +183,37 @@ class Runtime:
         )
         return result
 
+    def click_area(
+        self,
+        area: Rect,
+        resolver: ClickResolver | None = None,
+        duration: Timing | None = None,
+        *,
+        pre_delay: Timing | None = None,
+        post_delay: Timing | None = None,
+    ) -> bool:
+        """Resolve one point inside ``area`` and perform a normal click there."""
+        x, y, width, height = area
+        if width <= 0 or height <= 0:
+            raise ValueError("click area must have positive width and height")
+
+        strategy = resolver or self.interaction.click.resolver
+        point = strategy((x, y, width, height))
+        resolver_name = getattr(strategy, "__name__", type(strategy).__name__)
+        controller_logger.debug(
+            "click area=%s point=%s resolver=%s",
+            area,
+            point,
+            resolver_name,
+        )
+
+        return self.click(
+            point,
+            duration,
+            pre_delay=pre_delay,
+            post_delay=post_delay,
+        )
+
     def click(
         self,
         point: Point,
@@ -198,7 +222,7 @@ class Runtime:
         pre_delay: Timing | None = None,
         post_delay: Timing | None = None,
     ) -> bool:
-        """Press one point using runtime defaults unless an option is overridden."""
+        """Press one exact point using runtime defaults unless an option is overridden."""
         config = self.interaction.click
         duration_ms = resolve_timing(
             config.duration if duration is None else duration,
