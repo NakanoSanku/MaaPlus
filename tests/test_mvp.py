@@ -6,11 +6,11 @@ from threading import Event, Thread
 from types import SimpleNamespace
 
 from maa.pipeline import JOCR, JFeatureMatch, JRecognitionType, JTemplateMatch
-from maaplus import MatchResult, OCR, Runtime, Scheduler, Task, TaskResult, Template, Tick, routed
+from maaplus import MatchResult, OCR, Runtime, Scheduler, Task, TaskResult, Template, Tick, click, routed
 
 
-def make_match(hit: bool, box=None, click=None) -> MatchResult:
-    return MatchResult(SimpleNamespace(hit=hit, box=box), click)
+def make_match(hit: bool, box=None, click_area=None) -> MatchResult:
+    return MatchResult(SimpleNamespace(hit=hit, box=box), click_area)
 
 
 class FakeRuntime:
@@ -28,7 +28,19 @@ class FakeRuntime:
     def match(self, locator, image) -> MatchResult:
         self.matches.append((locator, image))
         hit, box = self.hits.get(id(locator), (False, None))
-        return make_match(hit, box, self.click)
+        return make_match(hit, box, self.click_area)
+
+    def click_area(
+        self,
+        area,
+        resolver=None,
+        duration=None,
+        *,
+        pre_delay=None,
+        post_delay=None,
+    ) -> bool:
+        point = (resolver or click.center)(area)
+        return self.click(point, 50 if duration is None else duration)
 
     def click(self, point, duration=50) -> bool:
         self.clicks.append((point, duration))
@@ -201,8 +213,8 @@ class TaskHandlerTests(unittest.TestCase):
         runtime.hits[id(locator)] = (True, (10, 20, 30, 40))
         image = runtime.screenshot()
 
-        def bottom_right(result: MatchResult) -> tuple[int, int]:
-            x, y, width, height = result.box
+        def bottom_right(area: tuple[int, int, int, int]) -> tuple[int, int]:
+            x, y, width, height = area
             return x + width - 1, y + height - 1
 
         self.assertTrue(runtime.match(locator, image).click(bottom_right, duration=120))
