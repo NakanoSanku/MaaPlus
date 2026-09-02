@@ -11,8 +11,8 @@ from maaplus import (
     Runtime,
     SwipeConfig,
     Tick,
-    click,
-    swipe,
+    path,
+    point,
     timing,
 )
 
@@ -79,10 +79,10 @@ class TimingTests(unittest.TestCase):
         self.assertEqual(calls, 2)
 
 
-class ClickStrategyTests(unittest.TestCase):
-    def test_random_click_respects_padding(self) -> None:
+class PointStrategyTests(unittest.TestCase):
+    def test_random_point_respects_padding(self) -> None:
         area = (100, 200, 100, 80)
-        resolver = click.random(padding=0.15)
+        resolver = point.random(padding=0.15)
 
         for _ in range(100):
             x, y = resolver(area)
@@ -91,15 +91,24 @@ class ClickStrategyTests(unittest.TestCase):
             self.assertGreaterEqual(y, 212)
             self.assertLessEqual(y, 267)
 
-    def test_relative_click_resolves_expected_point(self) -> None:
-        self.assertEqual(click.relative(0.5, 0.5)((10, 20, 11, 21)), (15, 30))
+    def test_relative_point_resolves_expected_point(self) -> None:
+        self.assertEqual(point.relative(0.5, 0.5)((10, 20, 11, 21)), (15, 30))
 
-    def test_center_click_accepts_plain_area(self) -> None:
-        self.assertEqual(click.center((10, 20, 30, 40)), (25, 40))
+    def test_center_accepts_plain_area(self) -> None:
+        self.assertEqual(point.center((10, 20, 30, 40)), (25, 40))
 
-    def test_click_strategy_rejects_empty_area(self) -> None:
+    def test_point_strategy_rejects_empty_area(self) -> None:
         with self.assertRaises(ValueError):
-            click.center((10, 20, 0, 40))
+            point.center((10, 20, 0, 40))
+
+    def test_point_resolver_can_build_swipe_endpoints(self) -> None:
+        pick = point.relative(0.5, 0.5)
+        start = pick((0, 100, 100, 100))
+        end = pick((200, 0, 100, 100))
+
+        self.assertEqual(start, (50, 150))
+        self.assertEqual(end, (250, 50))
+        self.assertEqual(path.direct([start, end]), (start, end))
 
 
 class RuntimeInteractionTests(unittest.TestCase):
@@ -154,14 +163,14 @@ class RuntimeInteractionTests(unittest.TestCase):
 
         self.assertEqual(controller.events, [("down", 12, 34), ("up",)])
 
-    def test_click_area_uses_default_click_resolver(self) -> None:
+    def test_click_area_uses_default_point_resolver(self) -> None:
         controller = FakeController()
         runtime = Runtime(
             tasker=SimpleNamespace(running=False),
             controller=controller,
             interaction=InteractionConfig(
                 click=ClickConfig(
-                    resolver=click.relative(1.0, 1.0),
+                    resolver=point.relative(1.0, 1.0),
                     duration=0,
                 ),
             ),
@@ -178,13 +187,13 @@ class RuntimeInteractionTests(unittest.TestCase):
             controller=controller,
             interaction=InteractionConfig(
                 click=ClickConfig(
-                    resolver=click.relative(1.0, 1.0),
+                    resolver=point.relative(1.0, 1.0),
                     duration=0,
                 ),
             ),
         )
 
-        runtime.click_area((10, 20, 30, 40), resolver=click.center)
+        runtime.click_area((10, 20, 30, 40), resolver=point.center)
 
         self.assertEqual(controller.events, [("down", 25, 40), ("up",)])
 
@@ -221,7 +230,7 @@ class RuntimeInteractionTests(unittest.TestCase):
         sleep.assert_called_once()
         self.assertAlmostEqual(sleep.call_args.args[0], 0.08)
 
-    def test_swipe_uses_configured_interpolation(self) -> None:
+    def test_swipe_uses_configured_path_interpolation(self) -> None:
         controller = FakeController()
         runtime = Runtime(
             tasker=SimpleNamespace(running=False),
@@ -229,7 +238,7 @@ class RuntimeInteractionTests(unittest.TestCase):
             interaction=InteractionConfig(
                 swipe=SwipeConfig(
                     duration=0,
-                    interpolation=swipe.linear(samples=5),
+                    interpolation=path.linear(samples=5),
                 )
             ),
         )
@@ -265,18 +274,18 @@ class RuntimeInteractionTests(unittest.TestCase):
         self.assertEqual(tasker.bound, (resource, controller))
 
 
-class SwipeStrategyTests(unittest.TestCase):
+class PathStrategyTests(unittest.TestCase):
     def test_linear_interpolation_resamples_path(self) -> None:
-        resolver = swipe.linear(samples=5)
+        interpolator = path.linear(samples=5)
         self.assertEqual(
-            tuple(resolver([(0, 0), (8, 0)])),
+            tuple(interpolator([(0, 0), (8, 0)])),
             ((0, 0), (2, 0), (4, 0), (6, 0), (8, 0)),
         )
 
     def test_ease_in_out_preserves_endpoints(self) -> None:
-        path = tuple(swipe.ease_in_out(samples=20)([(10, 20), (100, 200)]))
-        self.assertEqual(path[0], (10, 20))
-        self.assertEqual(path[-1], (100, 200))
+        resolved = tuple(path.ease_in_out(samples=20)([(10, 20), (100, 200)]))
+        self.assertEqual(resolved[0], (10, 20))
+        self.assertEqual(resolved[-1], (100, 200))
 
 
 if __name__ == "__main__":
