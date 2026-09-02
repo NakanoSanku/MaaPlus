@@ -55,9 +55,26 @@ def _inline(locator: Locator) -> dict[str, Any]:
     }
 
 
+def _sub_recognitions(name: str, locators: tuple[Locator, ...]) -> list[dict[str, Any]]:
+    if not locators:
+        raise ValueError(f"{name} requires at least one locator")
+    return [_inline(locator) for locator in locators]
+
+
 def FirstOf(*locators: Locator) -> JOr:
     """Match the first successful locator using MaaFramework's native Or recognition."""
-    if not locators:
-        raise ValueError("FirstOf requires at least one locator")
+    return JOr(any_of=_sub_recognitions("FirstOf", locators))
 
-    return JOr(any_of=[_inline(locator) for locator in locators])
+
+def AllOf(*locators: Locator, box_index: int = 0) -> JAnd:
+    """Require every locator to match using MaaFramework's native And recognition.
+
+    ``box_index`` selects which successful sub-recognition supplies the resulting
+    match box, and therefore the default target used by ``MatchResult.click()``.
+    """
+    all_of = _sub_recognitions("AllOf", locators)
+    if not 0 <= box_index < len(locators):
+        raise ValueError(
+            f"AllOf box_index must be between 0 and {len(locators) - 1}, got {box_index}"
+        )
+    return JAnd(all_of=all_of, box_index=box_index)
