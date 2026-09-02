@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from heapq import heappop, heappush
@@ -13,6 +14,8 @@ from .runtime import Runtime
 from .task import Task, TaskResult
 from .tick import Tick
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(slots=True)
 class _Schedule:
@@ -20,6 +23,7 @@ class _Schedule:
 
     task: Task
     deadline: float
+    trigger: str
     interval: float | None = None
 
 
@@ -97,6 +101,7 @@ class Scheduler:
         A task already current, ready, or suspended is not duplicated. Repeated requests coalesce
         into at most one pending execution that is released after the active execution completes.
         """
+        logger.info("task requested task=%s priority=%d trigger=submit", task.name, task.priority)
         with self._condition:
             self._request_task_locked(task)
             self._condition.notify_all()
@@ -107,7 +112,13 @@ class Scheduler:
         if delay < 0:
             raise ValueError("delay must be >= 0")
 
-        self._add_schedule(task, monotonic() + delay / 1000)
+        logger.info(
+            "task scheduled task=%s priority=%d trigger=after delay_ms=%d",
+            task.name,
+            task.priority,
+            delay,
+        )
+        self._add_schedule(task, monotonic() + delay / 1000, trigger="after")
         return task
 
     def at(self, task: Task, *, when: datetime) -> Task:
@@ -118,7 +129,13 @@ class Scheduler:
         """
         now = datetime.now(when.tzinfo) if when.tzinfo is not None else datetime.now()
         delay = max(0.0, (when - now).total_seconds())
-        self._add_schedule(task, monotonic() + delay)
+        logger.info(
+            "task scheduled task=%s priority=%d trigger=at when=%s",
+            task.name,
+            task.priority,
+            when.isoformat(),
+        )
+        self._add_schedule(task, monotonic() + delay, trigger="at")
         return task
 
     def every(self, task: Task, *, interval: int) -> Task:
@@ -131,18 +148,52 @@ class Scheduler:
         if interval <= 0:
             raise ValueError("interval must be > 0")
 
+        logger.info(
+            "task scheduled task=%s priority=%d trigger=every interval_ms=%d",
+            task.name,
+            task.priority,
+            interval,
+        )
         seconds = interval / 1000
-        self._add_schedule(task, monotonic() + seconds, interval=seconds)
+        self._add_schedule(
+            task,
+            monotonic() + seconds,
+            trigger="every",
+            interval=seconds,
+        )
         return task
 
     def tick(self, task: Task) -> TaskResult:
         """Capture one fresh screenshot and invoke one task handler."""
-        tick = Tick(runtime=self.runtime, image=self.runtime.screenshot())
-        result = task.handler(tick)
+        tick_started = monotonic()
+        try:
+            tick = Tick(runtime=self.runtime, image=self.runtime.screenshot())
+            handler_started = monotonic()
+            result = task.handler(tick)
+        except Exception:
+            logger.exception("task tick failed task=%s", task.name)
+            raise
+
+        handler_elapsed_ms = (monotonic() - handler_started) * 1000
+        tick_elapsed_ms = (monotonic() - tick_started) * 1000
+
         if not isinstance(result, TaskResult):
+            logger.error(
+                "invalid task result task=%s result_type=%s",
+                task.name,
+                type(result).__name__,
+            )
             raise TypeError(
                 f"Task {task.name!r} handler must return TaskResult, got {type(result).__name__}"
             )
+
+        logger.debug(
+            "handler result task=%s result=%s handler_ms=%.1f tick_ms=%.1f",
+            task.name,
+            result.name,
+            handler_elapsed_ms,
+            tick_elapsed_ms,
+        )
         return result
 
     def run(self, *, interval: int = 0) -> None:
@@ -165,6 +216,8 @@ class Scheduler:
             self._paused = False
             self._stop_requested = False
 
+        logger.info("scheduler started interval_ms=%d", interval)
+
         try:
             delay = 0
             while True:
@@ -176,12 +229,15 @@ class Scheduler:
 
                 with self._condition:
                     if self._current is task and result is TaskResult.DONE:
+                        logger.info("task completed task=%s", task.name)
                         self._current = None
                         self._current_yielded = False
                         self._release_pending_locked(task)
                         delay = 0
                     elif self._current is task:
                         self._current_yielded = result is TaskResult.YIELD
+                        if self._current_yielded:
+                            logger.debug("task yielded task=%s", task.name)
                         delay = interval
                     self._condition.notify_all()
         finally:
@@ -190,6 +246,7 @@ class Scheduler:
                 self._paused = False
                 self._stop_requested = False
                 self._condition.notify_all()
+            logger.info("scheduler stopped")
 
     def pause(self) -> None:
         """Pause before the next task handler invocation without interrupting the current one."""
@@ -198,6 +255,7 @@ class Scheduler:
                 return
             self._paused = True
             self._condition.notify_all()
+        logger.info("scheduler paused")
 
     def resume(self) -> None:
         """Resume a paused scheduler loop."""
@@ -206,17 +264,33 @@ class Scheduler:
                 return
             self._paused = False
             self._condition.notify_all()
+        logger.info("scheduler resumed")
 
     def stop(self) -> None:
         """Stop execution without discarding unfinished current or queued tasks."""
         with self._condition:
+            was_running = self._running
             self._stop_requested = True
             self._paused = False
             self._condition.notify_all()
+        if was_running:
+            logger.info("scheduler stop requested")
         self.runtime.stop()
 
-    def _add_schedule(self, task: Task, deadline: float, *, interval: float | None = None) -> None:
-        schedule = _Schedule(task=task, deadline=deadline, interval=interval)
+    def _add_schedule(
+        self,
+        task: Task,
+        deadline: float,
+        *,
+        trigger: str,
+        interval: float | None = None,
+    ) -> None:
+        schedule = _Schedule(
+            task=task,
+            deadline=deadline,
+            trigger=trigger,
+            interval=interval,
+        )
         with self._condition:
             self._push_schedule_locked(schedule)
             self._condition.notify_all()
@@ -268,6 +342,12 @@ class Scheduler:
         now = monotonic()
         while self._scheduled and self._scheduled[0][0] <= now:
             _, _, schedule = heappop(self._scheduled)
+            logger.info(
+                "task trigger due task=%s priority=%d trigger=%s",
+                schedule.task.name,
+                schedule.task.priority,
+                schedule.trigger,
+            )
             self._request_task_locked(schedule.task)
 
             if schedule.interval is not None:
@@ -279,9 +359,25 @@ class Scheduler:
 
     def _select_or_preempt_locked(self) -> bool:
         if self._current is None:
+            suspended = self._suspended[-1] if self._suspended else None
             self._current = self._pop_next_locked()
             self._current_yielded = False
-            return self._current is not None
+            if self._current is None:
+                return False
+
+            if self._current is suspended:
+                logger.info(
+                    "task resumed task=%s priority=%d",
+                    self._current.name,
+                    self._current.priority,
+                )
+            else:
+                logger.info(
+                    "task started task=%s priority=%d",
+                    self._current.name,
+                    self._current.priority,
+                )
+            return True
 
         if not self._current_yielded or not self._ready:
             return False
@@ -290,9 +386,22 @@ class Scheduler:
         if candidate.priority <= self._current.priority:
             return False
 
-        self._suspended.append(self._current)
+        previous = self._current
+        self._suspended.append(previous)
         self._current = self._pop_ready_locked()
         self._current_yielded = False
+        logger.info(
+            "task preempted task=%s priority=%d by=%s priority=%d",
+            previous.name,
+            previous.priority,
+            self._current.name,
+            self._current.priority,
+        )
+        logger.info(
+            "task started task=%s priority=%d",
+            self._current.name,
+            self._current.priority,
+        )
         return True
 
     def _pop_next_locked(self) -> Task | None:
@@ -307,15 +416,23 @@ class Scheduler:
 
     def _request_task_locked(self, task: Task) -> None:
         if self._task_active_locked(task):
+            already_pending = task in self._pending
             self._pending.add(task)
+            logger.debug(
+                "task request coalesced task=%s pending_new=%s",
+                task.name,
+                not already_pending,
+            )
             return
         self._push_ready_locked(task)
+        logger.debug("task ready task=%s priority=%d", task.name, task.priority)
 
     def _release_pending_locked(self, task: Task) -> None:
         if task not in self._pending:
             return
         self._pending.remove(task)
         self._push_ready_locked(task)
+        logger.debug("pending task released task=%s", task.name)
 
     def _task_active_locked(self, task: Task) -> bool:
         if self._current is task:
