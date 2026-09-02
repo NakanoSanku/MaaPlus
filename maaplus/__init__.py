@@ -1,11 +1,8 @@
-from maa.pipeline import JOCR as OCR
-from maa.pipeline import JRecognitionParam as Locator
-from maa.pipeline import JTemplateMatch as Template
-
 from . import path, point, timing
 from .app import App, TaskHandle
 from .geometry import PathInterpolator, Point, PointResolver, Rect
 from .interaction import ClickConfig, InteractionConfig, SwipeConfig
+from .locator import FirstOf, Locator, OCR, Template
 from .routing import Navigator, RoutedTaskHandler, routed
 from .runtime import MatchResult, Runtime
 from .scheduler import Scheduler
@@ -22,6 +19,7 @@ __all__ = [
     "ClickConfig",
     "CONTINUE",
     "DONE",
+    "FirstOf",
     "InteractionConfig",
     "Locator",
     "MatchResult",
