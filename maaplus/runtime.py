@@ -21,9 +21,8 @@ from maa.pipeline import (
     JTemplateMatch,
 )
 
-from .click import ClickResolver, Point, Rect
+from .geometry import PathInterpolator, Point, PointResolver, Rect
 from .interaction import InteractionConfig
-from .swipe import SwipeInterpolator
 from .timing import Timing, resolve as resolve_timing
 
 if TYPE_CHECKING:
@@ -79,7 +78,7 @@ class MatchResult:
 
     def click(
         self,
-        resolver: ClickResolver | None = None,
+        resolver: PointResolver | None = None,
         duration: Timing | None = None,
         *,
         pre_delay: Timing | None = None,
@@ -186,7 +185,7 @@ class Runtime:
     def click_area(
         self,
         area: Rect,
-        resolver: ClickResolver | None = None,
+        resolver: PointResolver | None = None,
         duration: Timing | None = None,
         *,
         pre_delay: Timing | None = None,
@@ -265,7 +264,7 @@ class Runtime:
         *,
         pre_delay: Timing | None = None,
         post_delay: Timing | None = None,
-        interpolation: SwipeInterpolator | None = None,
+        interpolation: PathInterpolator | None = None,
     ) -> bool:
         """Move through a point path using runtime defaults unless overridden."""
         raw_path = tuple(points)
@@ -286,14 +285,14 @@ class Runtime:
             name="swipe post_delay",
         )
 
-        path = tuple((interpolation or config.interpolation)(raw_path))
-        if len(path) < 2:
-            raise ValueError("swipe interpolation must return at least two points")
+        resolved_path = tuple((interpolation or config.interpolation)(raw_path))
+        if len(resolved_path) < 2:
+            raise ValueError("path interpolation must return at least two points")
 
         controller_logger.debug(
             "swipe points=%s path=%s duration_ms=%d pre_delay_ms=%d post_delay_ms=%d",
             raw_path,
-            path,
+            resolved_path,
             duration_ms,
             pre_delay_ms,
             post_delay_ms,
@@ -302,12 +301,12 @@ class Runtime:
         self._sleep(pre_delay_ms)
         self._wait_action_interval()
 
-        self._touch_down(path[0])
+        self._touch_down(resolved_path[0])
         started_at = time.monotonic()
-        step_duration = duration_ms / 1000 / (len(path) - 1)
+        step_duration = duration_ms / 1000 / (len(resolved_path) - 1)
 
         try:
-            for index, point in enumerate(path[1:], 1):
+            for index, point in enumerate(resolved_path[1:], 1):
                 delay = started_at + step_duration * index - time.monotonic()
                 if delay > 0:
                     time.sleep(delay)
