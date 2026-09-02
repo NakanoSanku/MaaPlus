@@ -4,9 +4,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from maa.pipeline import JRecognitionParam
-
 from .geometry import PathInterpolator, Point, PointResolver, Rect
+from .locator import Locator
 from .runtime import MatchResult, Runtime
 from .timing import Timing
 
@@ -26,7 +25,7 @@ class Tick:
     runtime: Runtime
     image: numpy.ndarray
 
-    def match(self, locator: JRecognitionParam) -> MatchResult:
+    def match(self, locator: Locator) -> MatchResult:
         return self.runtime.match(locator, self.image)
 
     def click(
