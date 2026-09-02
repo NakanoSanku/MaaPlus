@@ -10,7 +10,7 @@ The scenario is intentionally game-like:
 - `draw` is a higher-priority recurring task.
 - `App` restores `Scene.DRAW` before `DrawHandler` runs.
 - when drawing finishes, the suspended explore task resumes and `App` restores `Scene.EXPLORE` before calling `ExploreHandler` again.
-- `bootstrap.py` configures randomized click positions, press duration, UI settle delays, action spacing, and swipe interpolation once for the whole application.
+- `bootstrap.py` configures randomized point selection, press duration, UI settle delays, action spacing, and path interpolation once for the whole application.
 
 ## Structure
 
@@ -77,12 +77,12 @@ Stateful handlers can be callable objects, which lets business progress survive 
 
 ## Interaction defaults
 
-`demo/bootstrap.py` centralizes game-input behavior:
+`demo/bootstrap.py` centralizes game-input behavior while reusing action-independent geometry strategies:
 
 ```python
 INTERACTION = InteractionConfig(
     click=ClickConfig(
-        resolver=click.random(padding=0.15),
+        resolver=point.random(padding=0.15),
         duration=timing.random(40, 90),
         pre_delay=timing.random(80, 150),
         post_delay=timing.random(250, 450),
@@ -90,11 +90,13 @@ INTERACTION = InteractionConfig(
     swipe=SwipeConfig(
         duration=timing.random(300, 500),
         post_delay=timing.random(250, 400),
-        interpolation=swipe.ease_in_out(samples=20),
+        interpolation=path.ease_in_out(samples=20),
     ),
     action_interval=timing.random(60, 120),
 )
 ```
+
+`point.*` strategies are general `Rect -> Point` helpers and are not limited to click targets. For example, the same resolver can choose randomized swipe start/end points before calling `tick.swipe(...)`.
 
 Normal handlers still just call `result.click()` or `tick.swipe(...)`. A particular action can override a default when needed, for example `result.click(duration=1200)` or `result.click(pre_delay=0)`.
 
