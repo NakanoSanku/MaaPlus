@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING
 
 from maa.pipeline import JRecognitionParam
 
-from .runtime import MatchResult, Point, Runtime
+from .click import ClickResolver, Point, Rect
+from .runtime import MatchResult, Runtime
 from .swipe import SwipeInterpolator
 from .timing import Timing
 
@@ -37,6 +38,7 @@ class Tick:
         pre_delay: Timing | None = None,
         post_delay: Timing | None = None,
     ) -> bool:
+        """Click one exact point."""
         if pre_delay is None and post_delay is None:
             if duration is None:
                 return self.runtime.click(point)
@@ -45,6 +47,24 @@ class Tick:
         return self.runtime.click(
             point,
             duration,
+            pre_delay=pre_delay,
+            post_delay=post_delay,
+        )
+
+    def click_area(
+        self,
+        area: Rect,
+        resolver: ClickResolver | None = None,
+        duration: Timing | None = None,
+        *,
+        pre_delay: Timing | None = None,
+        post_delay: Timing | None = None,
+    ) -> bool:
+        """Resolve a point inside one rectangular area and click it."""
+        return self.runtime.click_area(
+            area,
+            resolver=resolver,
+            duration=duration,
             pre_delay=pre_delay,
             post_delay=post_delay,
         )
