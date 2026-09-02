@@ -5,8 +5,8 @@ import unittest
 from dataclasses import asdict
 from types import SimpleNamespace
 
-from maa.pipeline import JOr, JRecognitionType
-from maaplus import FirstOf, OCR, Runtime, Template
+from maa.pipeline import JAnd, JOr, JRecognitionType
+from maaplus import AllOf, FirstOf, OCR, Runtime, Template
 
 
 class FakeRecognitionJob:
@@ -90,18 +90,103 @@ class FirstOfTests(unittest.TestCase):
         self.assertIs(passed_image, image)
         self.assertIs(result.detail, detail)
 
-    def test_supports_nested_first_of(self) -> None:
-        nested = FirstOf(
+
+class AllOfTests(unittest.TestCase):
+    def test_requires_at_least_one_locator(self) -> None:
+        with self.assertRaisesRegex(ValueError, "at least one locator"):
+            AllOf()
+
+    def test_builds_native_maa_and_with_inline_recognitions(self) -> None:
+        icon = Template(template=["battle/icon.png"], threshold=[0.9])
+        text = OCR(expected=["自动"], threshold=0.5)
+
+        locator = AllOf(icon, text, box_index=1)
+
+        self.assertIsInstance(locator, JAnd)
+        self.assertEqual(locator.box_index, 1)
+        self.assertEqual(len(locator.all_of), 2)
+
+        icon_inline = locator.all_of[0]["recognition"]
+        self.assertEqual(icon_inline["type"], JRecognitionType.TemplateMatch)
+        self.assertEqual(icon_inline["param"]["template"], ["battle/icon.png"])
+
+        text_inline = locator.all_of[1]["recognition"]
+        self.assertEqual(text_inline["type"], JRecognitionType.OCR)
+        self.assertEqual(text_inline["param"]["expected"], ["自动"])
+
+    def test_rejects_invalid_box_index(self) -> None:
+        icon = Template(template=["battle/icon.png"])
+        text = OCR(expected=["自动"])
+
+        with self.assertRaisesRegex(ValueError, "box_index"):
+            AllOf(icon, text, box_index=-1)
+
+        with self.assertRaisesRegex(ValueError, "box_index"):
+            AllOf(icon, text, box_index=2)
+
+    def test_serializes_as_tasker_post_recognition_payload(self) -> None:
+        locator = AllOf(
+            Template(template=["battle/icon.png"]),
+            OCR(expected=["自动"]),
+            box_index=1,
+        )
+
+        payload = asdict(locator)
+        encoded = json.dumps(payload, ensure_ascii=False)
+
+        self.assertIn('"all_of"', encoded)
+        self.assertIn('"box_index": 1', encoded)
+        self.assertIn('"TemplateMatch"', encoded)
+        self.assertIn('"OCR"', encoded)
+        self.assertIn("自动", encoded)
+
+    def test_runtime_treats_all_of_as_normal_locator(self) -> None:
+        detail = SimpleNamespace(hit=True, box=(100, 200, 50, 30))
+        tasker = FakeTasker(detail)
+        runtime = Runtime(tasker=tasker, controller=SimpleNamespace())
+        image = object()
+        locator = AllOf(
+            Template(template=["battle/icon.png"]),
+            OCR(expected=["自动"]),
+        )
+
+        result = runtime.match(locator, image)
+
+        recognition_type, param, passed_image = tasker.calls[0]
+        self.assertEqual(recognition_type, JRecognitionType.And)
+        self.assertIs(param, locator)
+        self.assertIs(passed_image, image)
+        self.assertIs(result.detail, detail)
+
+
+class CompositeLocatorTests(unittest.TestCase):
+    def test_first_of_can_contain_all_of(self) -> None:
+        locator = FirstOf(
+            AllOf(
+                Template(template=["battle/icon.png"]),
+                OCR(expected=["自动"]),
+            ),
+            OCR(expected=["战斗中"]),
+        )
+
+        first_inline = locator.any_of[0]["recognition"]
+        self.assertEqual(first_inline["type"], JRecognitionType.And)
+        self.assertEqual(len(first_inline["param"]["all_of"]), 2)
+
+    def test_all_of_can_contain_first_of(self) -> None:
+        locator = AllOf(
             FirstOf(
                 Template(template=["start_a.png"]),
                 Template(template=["start_b.png"]),
             ),
             OCR(expected=["挑战"]),
+            box_index=1,
         )
 
-        first_inline = nested.any_of[0]["recognition"]
+        first_inline = locator.all_of[0]["recognition"]
         self.assertEqual(first_inline["type"], JRecognitionType.Or)
         self.assertEqual(len(first_inline["param"]["any_of"]), 2)
+        self.assertEqual(locator.box_index, 1)
 
 
 if __name__ == "__main__":
