@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Generic, Protocol, TypeVar
 
@@ -7,6 +8,7 @@ from .task import TaskHandler, TaskResult
 from .tick import Tick
 
 ContextT = TypeVar("ContextT")
+logger = logging.getLogger(__name__)
 
 
 class Navigator(Protocol[ContextT]):
@@ -30,7 +32,10 @@ class RoutedTaskHandler(Generic[ContextT]):
 
     def __call__(self, tick: Tick) -> TaskResult:
         if not self.navigator.ensure(self.target, tick):
+            logger.debug("context pending target=%r", self.target)
             return TaskResult.CONTINUE
+
+        logger.debug("context ready target=%r", self.target)
         return self.handler(tick)
 
 
