@@ -6,7 +6,7 @@ from threading import Event, Thread
 from types import SimpleNamespace
 
 from maa.pipeline import JOCR, JFeatureMatch, JRecognitionType, JTemplateMatch
-from maaplus import MatchResult, OCR, Runtime, Scheduler, Task, TaskResult, Template, Tick, click, routed
+from maaplus import MatchResult, OCR, Runtime, Scheduler, Task, TaskResult, Template, Tick, point, routed
 
 
 def make_match(hit: bool, box=None, click_area=None) -> MatchResult:
@@ -39,8 +39,8 @@ class FakeRuntime:
         pre_delay=None,
         post_delay=None,
     ) -> bool:
-        point = (resolver or click.center)(area)
-        return self.click(point, 50 if duration is None else duration)
+        resolved_point = (resolver or point.center)(area)
+        return self.click(resolved_point, 50 if duration is None else duration)
 
     def click(self, point, duration=50) -> bool:
         self.clicks.append((point, duration))
