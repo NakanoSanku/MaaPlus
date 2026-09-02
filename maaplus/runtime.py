@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 from maa.pipeline import (
     JAnd,
@@ -21,13 +21,16 @@ from maa.pipeline import (
     JTemplateMatch,
 )
 
+from .click import ClickResolver, Point, center
+from .interaction import InteractionConfig
+from .swipe import SwipeInterpolator
+from .timing import Timing, resolve as resolve_timing
+
 if TYPE_CHECKING:
     import numpy
 
     from maa.define import RecognitionDetail
 
-Point: TypeAlias = tuple[int, int]
-ClickResolver: TypeAlias = Callable[["MatchResult"], Point]
 
 _RECOGNITION_TYPES: dict[type[Any], JRecognitionType] = {
     JDirectHit: JRecognitionType.DirectHit,
@@ -55,7 +58,8 @@ class MatchResult:
     """MaaFramework recognition result with click sugar."""
 
     detail: RecognitionDetail
-    _click: Callable[[Point, int], bool] | None = field(default=None, repr=False)
+    _click: Callable[..., bool] | None = field(default=None, repr=False)
+    _click_resolver: ClickResolver = field(default=center, repr=False)
 
     @property
     def hit(self) -> bool:
@@ -70,31 +74,50 @@ class MatchResult:
     def __bool__(self) -> bool:
         return self.hit
 
-    def click(self, resolver: ClickResolver | None = None, duration: int = 50) -> bool:
+    def click(
+        self,
+        resolver: ClickResolver | None = None,
+        duration: Timing | None = None,
+        *,
+        pre_delay: Timing | None = None,
+        post_delay: Timing | None = None,
+    ) -> bool:
         if not self.hit or self._click is None:
             return False
 
-        if resolver is None:
-            box = self.box
-            if box is None:
-                return False
-            x, y, width, height = box
-            point = (x + width // 2, y + height // 2)
-        else:
-            point = resolver(self)
+        point = (resolver or self._click_resolver)(self)
 
-        return self._click(point, duration)
+        if pre_delay is None and post_delay is None:
+            if duration is None:
+                return self._click(point)
+            return self._click(point, duration)
+
+        return self._click(
+            point,
+            duration,
+            pre_delay=pre_delay,
+            post_delay=post_delay,
+        )
 
 
 class Runtime:
-    """Thin synchronous facade over MaaFramework."""
+    """Synchronous MaaFramework facade with configurable interaction behavior."""
 
-    __slots__ = ("tasker", "controller", "resource")
+    __slots__ = ("tasker", "controller", "resource", "interaction", "_last_input_end")
 
-    def __init__(self, *, tasker: Any, controller: Any, resource: Any | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        tasker: Any,
+        controller: Any,
+        resource: Any | None = None,
+        interaction: InteractionConfig | None = None,
+    ) -> None:
         self.tasker = tasker
         self.controller = controller
         self.resource = resource
+        self.interaction = interaction or InteractionConfig()
+        self._last_input_end: float | None = None
 
     def screenshot(self) -> numpy.ndarray:
         """Capture a fresh screenshot."""
@@ -120,31 +143,86 @@ class Runtime:
         if recognition is None:
             raise RuntimeError("MaaFramework recognition returned no recognition detail")
 
-        return MatchResult(recognition, self.click)
+        return MatchResult(
+            recognition,
+            self.click,
+            self.interaction.click.resolver,
+        )
 
-    def click(self, point: Point, duration: int = 50) -> bool:
-        """Press one point for ``duration`` milliseconds."""
-        if duration < 0:
-            raise ValueError("duration must be >= 0")
+    def click(
+        self,
+        point: Point,
+        duration: Timing | None = None,
+        *,
+        pre_delay: Timing | None = None,
+        post_delay: Timing | None = None,
+    ) -> bool:
+        """Press one point using runtime defaults unless an option is overridden."""
+        config = self.interaction.click
+        duration_ms = resolve_timing(
+            config.duration if duration is None else duration,
+            name="click duration",
+        )
+        pre_delay_ms = resolve_timing(
+            config.pre_delay if pre_delay is None else pre_delay,
+            name="click pre_delay",
+        )
+        post_delay_ms = resolve_timing(
+            config.post_delay if post_delay is None else post_delay,
+            name="click post_delay",
+        )
+
+        self._sleep(pre_delay_ms)
+        self._wait_action_interval()
 
         self._touch_down(point)
         try:
-            time.sleep(duration / 1000)
+            self._sleep(duration_ms)
         finally:
             self._touch_up()
+
+        self._last_input_end = time.monotonic()
+        self._sleep(post_delay_ms)
         return True
 
-    def swipe(self, points: Sequence[Point], duration: int) -> bool:
-        """Move through a point path over ``duration`` milliseconds."""
-        path = tuple(points)
-        if len(path) < 2:
+    def swipe(
+        self,
+        points: Sequence[Point],
+        duration: Timing | None = None,
+        *,
+        pre_delay: Timing | None = None,
+        post_delay: Timing | None = None,
+        interpolation: SwipeInterpolator | None = None,
+    ) -> bool:
+        """Move through a point path using runtime defaults unless overridden."""
+        raw_path = tuple(points)
+        if len(raw_path) < 2:
             raise ValueError("swipe requires at least two points")
-        if duration < 0:
-            raise ValueError("duration must be >= 0")
+
+        config = self.interaction.swipe
+        duration_ms = resolve_timing(
+            config.duration if duration is None else duration,
+            name="swipe duration",
+        )
+        pre_delay_ms = resolve_timing(
+            config.pre_delay if pre_delay is None else pre_delay,
+            name="swipe pre_delay",
+        )
+        post_delay_ms = resolve_timing(
+            config.post_delay if post_delay is None else post_delay,
+            name="swipe post_delay",
+        )
+
+        path = tuple((interpolation or config.interpolation)(raw_path))
+        if len(path) < 2:
+            raise ValueError("swipe interpolation must return at least two points")
+
+        self._sleep(pre_delay_ms)
+        self._wait_action_interval()
 
         self._touch_down(path[0])
         started_at = time.monotonic()
-        step_duration = duration / 1000 / (len(path) - 1)
+        step_duration = duration_ms / 1000 / (len(path) - 1)
 
         try:
             for index, point in enumerate(path[1:], 1):
@@ -155,7 +233,26 @@ class Runtime:
         finally:
             self._touch_up()
 
+        self._last_input_end = time.monotonic()
+        self._sleep(post_delay_ms)
         return True
+
+    def _wait_action_interval(self) -> None:
+        if self._last_input_end is None:
+            return
+
+        interval_ms = resolve_timing(
+            self.interaction.action_interval,
+            name="action_interval",
+        )
+        remaining = interval_ms / 1000 - (time.monotonic() - self._last_input_end)
+        if remaining > 0:
+            time.sleep(remaining)
+
+    @staticmethod
+    def _sleep(milliseconds: int) -> None:
+        if milliseconds > 0:
+            time.sleep(milliseconds / 1000)
 
     def _touch_down(self, point: Point) -> None:
         x, y = point
