@@ -7,7 +7,15 @@ from maa.resource import Resource
 from maa.tasker import Tasker
 from maa.toolkit import Toolkit
 
-from maaplus import App
+from maaplus import (
+    App,
+    ClickConfig,
+    InteractionConfig,
+    SwipeConfig,
+    click,
+    swipe,
+    timing,
+)
 
 from .navigation.navigator import YYSNavigator
 from .navigation.scene import Scene
@@ -15,6 +23,21 @@ from .navigation.scene import Scene
 ROOT = Path(__file__).resolve().parents[1]
 RESOURCE_DIR = ROOT / "resource"
 DEBUG_DIR = ROOT / ".debug"
+
+INTERACTION = InteractionConfig(
+    click=ClickConfig(
+        resolver=click.random(padding=0.15),
+        duration=timing.random(40, 90),
+        pre_delay=timing.random(80, 150),
+        post_delay=timing.random(250, 450),
+    ),
+    swipe=SwipeConfig(
+        duration=timing.random(300, 500),
+        post_delay=timing.random(250, 400),
+        interpolation=swipe.ease_in_out(samples=20),
+    ),
+    action_interval=timing.random(60, 120),
+)
 
 
 def create_adb_controller() -> AdbController:
@@ -54,4 +77,5 @@ def create_app() -> App[Scene]:
         controller=create_adb_controller(),
         resource=load_resource(),
         navigator=YYSNavigator(),
+        interaction=INTERACTION,
     )
