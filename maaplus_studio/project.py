@@ -91,8 +91,18 @@ class Project:
             "cases": [], "generated": {},
         })
         project.save()
-        (project.path(resource) / "image").mkdir(parents=True, exist_ok=True)
-        (project.path(resource) / "pipeline").mkdir(parents=True, exist_ok=True)
+        project.path(f"{resource}/image").mkdir(parents=True, exist_ok=True)
+        pipeline = project.path(f"{resource}/pipeline")
+        pipeline.mkdir(parents=True, exist_ok=True)
+        # MaaFramework needs at least one non-hidden JSON/JSONC file, even for
+        # post_recognition-only bundles. An empty object adds no runtime tasks.
+        has_pipeline = any(
+            path.is_file() and path.suffix.lower() in (".json", ".jsonc")
+            and not any(part.startswith(".") for part in path.relative_to(pipeline).parts)
+            for path in pipeline.rglob("*")
+        )
+        if not has_pipeline:
+            atomic_write(project.path(f"{resource}/pipeline/studio-empty.json"), b"{}\n")
         return project
 
     @classmethod
