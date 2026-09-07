@@ -7,3 +7,17 @@ requires-python = ">=3.14"
 dependencies = [
     "maafw>=5.12.3",
 ]
+
+[project.optional-dependencies]
+studio = ["Pillow>=10.4"]
+dev = ["pytest>=8.3"]
+
+[project.scripts]
+maaplus-studio = "maaplus_studio.__main__:main"
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["maaplus", "maaplus.*", "maaplus_studio", "maaplus_studio.*"]

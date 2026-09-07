@@ -1,0 +1,32 @@
+name: UI Studio
+on:
+  push:
+    paths:
+      - 'maaplus_studio/**'
+      - 'tests/test_studio*.py'
+      - 'pyproject.toml'
+      - '.github/workflows/ui-studio.yml'
+  pull_request:
+    paths:
+      - 'maaplus_studio/**'
+      - 'tests/test_studio*.py'
+      - 'pyproject.toml'
+      - '.github/workflows/ui-studio.yml'
+permissions:
+  contents: read
+jobs:
+  studio:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - run: sudo apt-get update && sudo apt-get install -y xvfb libegl1 libgl1
+      - run: python -m pip install -e '.[studio,dev]'
+      - name: Core and real Tk widget tests
+        run: xvfb-run -a python -m pytest -q tests/test_studio.py tests/test_studio_gui.py
+      - name: MaaFramework synthetic integration
+        env:
+          MAAPLUS_STUDIO_NATIVE: '1'
+        run: python -m pytest -q tests/test_studio.py -k native
