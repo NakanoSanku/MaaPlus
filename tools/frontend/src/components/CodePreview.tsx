@@ -154,59 +154,65 @@ export function CodePreview({
     e.target.value = '';
   };
 
+  const errorCount = rendered.diagnostics.filter((item) => item.severity === 'error').length;
+  const warningCount = rendered.diagnostics.filter((item) => item.severity === 'warning').length;
+  const infoCount = rendered.diagnostics.filter((item) => item.severity === 'info').length;
+
   return (
-    <div className="flex-1 min-h-0 bg-[#0b0d12] text-slate-100 overflow-hidden">
-      <div className="h-full grid grid-cols-[270px_minmax(0,1fr)_300px]">
-        <aside className="border-r border-white/8 bg-[#10131a] p-4 overflow-y-auto">
+    <div className="flex-1 min-h-0 bg-[#f5f5f2] text-[#191918] overflow-hidden p-3">
+      <div className="h-full grid grid-cols-[250px_minmax(0,1fr)_286px] gap-3">
+        <aside className="ds-panel p-4 overflow-y-auto">
           <div className="flex items-start justify-between gap-3 mb-5">
             <div>
-              <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">Code Studio</div>
-              <h2 className="text-sm font-semibold text-slate-100">工程输出</h2>
-              <p className="text-[11px] leading-5 text-slate-500 mt-1">生成可直接使用的 MaaPlus UI 定义，而不是独立 DSL。</p>
+              <div className="ds-eyebrow mb-1">Code Studio</div>
+              <h2 className="text-sm font-semibold text-[#191918]">工程输出</h2>
+              <p className="text-[11px] leading-5 text-[#7d7d76] mt-1">生成、检查并写回真实 MaaPlus UI 定义。</p>
             </div>
-            <FileCode2 className="w-5 h-5 text-violet-300" />
+            <div className="w-8 h-8 rounded-lg bg-[#f2f2ef] border border-[#e6e6e2] flex items-center justify-center">
+              <FileCode2 className="w-4 h-4 text-[#494945]" />
+            </div>
           </div>
 
-          <div className="space-y-2 mb-5">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">生成范围</div>
-            <button
-              onClick={() => { setScope('active'); setDirty(false); setFilePath(suggestedUiPath(activeClass)); }}
-              className={`w-full text-left rounded-lg border px-3 py-2.5 transition-colors ${scope === 'active' ? 'border-violet-400/40 bg-violet-400/10' : 'border-white/8 bg-white/[0.02] hover:bg-white/[0.04]'}`}
-            >
-              <div className="text-xs font-medium text-slate-200">当前 UI 类</div>
-              <div className="text-[11px] text-slate-500 mt-0.5 truncate">{activeClass?.name || '未选择'}</div>
-            </button>
-            <button
-              onClick={() => { setScope('all'); setDirty(false); setFilePath('ui/workbench_generated.py'); }}
-              className={`w-full text-left rounded-lg border px-3 py-2.5 transition-colors ${scope === 'all' ? 'border-violet-400/40 bg-violet-400/10' : 'border-white/8 bg-white/[0.02] hover:bg-white/[0.04]'}`}
-            >
-              <div className="text-xs font-medium text-slate-200">全部 UI 类</div>
-              <div className="text-[11px] text-slate-500 mt-0.5">{uiClasses.length} classes · {uiClasses.reduce((n, cls) => n + cls.locators.length, 0)} locators</div>
-            </button>
+          <div className="mb-5">
+            <div className="ds-eyebrow mb-2">生成范围</div>
+            <div className="space-y-2">
+              <button
+                onClick={() => { setScope('active'); setDirty(false); setFilePath(suggestedUiPath(activeClass)); }}
+                className={`w-full text-left rounded-lg border px-3 py-2.5 transition-all ${scope === 'active' ? 'border-[#cfcfca] bg-[#f4f4f1] shadow-[inset_2px_0_0_#1b1b1a]' : 'border-[#e8e8e4] bg-white hover:bg-[#fafaf8]'}`}
+              >
+                <div className="text-xs font-medium text-[#2a2a28]">当前 UI 类</div>
+                <div className="text-[10px] text-[#8a8a83] mt-1 truncate">{activeClass?.name || '未选择'}</div>
+              </button>
+              <button
+                onClick={() => { setScope('all'); setDirty(false); setFilePath('ui/workbench_generated.py'); }}
+                className={`w-full text-left rounded-lg border px-3 py-2.5 transition-all ${scope === 'all' ? 'border-[#cfcfca] bg-[#f4f4f1] shadow-[inset_2px_0_0_#1b1b1a]' : 'border-[#e8e8e4] bg-white hover:bg-[#fafaf8]'}`}
+              >
+                <div className="text-xs font-medium text-[#2a2a28]">全部 UI 类</div>
+                <div className="text-[10px] text-[#8a8a83] mt-1">{uiClasses.length} classes · {uiClasses.reduce((n, cls) => n + cls.locators.length, 0)} locators</div>
+              </button>
+            </div>
           </div>
 
-          <div className="space-y-2 mb-5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase tracking-wider text-slate-500">项目状态</span>
-              <Button
-                size="sm"
-                variant="ghost"
+          <div className="mb-5">
+            <div className="flex items-center justify-between mb-2">
+              <span className="ds-eyebrow">项目源</span>
+              <button
                 onClick={handleScanProject}
                 disabled={isScanning}
-                className="h-7 px-2 text-[11px] text-slate-400 hover:text-slate-100"
+                className="inline-flex items-center gap-1 text-[10px] font-medium text-[#696963] hover:text-[#222220] disabled:opacity-50"
               >
-                <FolderSync className={`w-3.5 h-3.5 mr-1 ${isScanning ? 'animate-spin' : ''}`} />
+                <FolderSync className={`w-3.5 h-3.5 ${isScanning ? 'animate-spin' : ''}`} />
                 {isScanning ? '扫描中' : '重新扫描'}
-              </Button>
+              </button>
             </div>
-            <div className="rounded-lg border border-white/8 bg-black/20 divide-y divide-white/6">
+            <div className="rounded-lg border border-[#e8e8e4] bg-[#fafaf8] divide-y divide-[#ecece8]">
               {classesToRender.map((cls) => (
                 <div key={cls.name} className="px-3 py-2.5">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-xs text-slate-200 truncate">{cls.name}</span>
-                    <span className="text-[10px] text-slate-500">{cls.locators.length}</span>
+                    <span className="font-mono text-[11px] font-medium text-[#31312e] truncate">{cls.name}</span>
+                    <span className="rounded bg-white border border-[#e5e5e1] px-1.5 py-0.5 text-[9px] text-[#86867f]">{cls.locators.length}</span>
                   </div>
-                  <div className="text-[10px] text-slate-600 mt-1 truncate">{cls.sourceFile || 'workspace only'}</div>
+                  <div className="text-[9px] text-[#9b9b94] mt-1 truncate">{cls.sourceFile || 'workspace only'}</div>
                 </div>
               ))}
             </div>
@@ -214,100 +220,105 @@ export function CodePreview({
 
           <input ref={importInputRef} type="file" accept=".json" className="hidden" onChange={handleImportJson} />
           <div className="grid grid-cols-2 gap-2">
-            <Button variant="outline" size="sm" onClick={handleExportJson} className="h-8 text-[11px] border-white/10 text-slate-400">
-              <Download className="w-3.5 h-3.5 mr-1" />JSON
+            <Button variant="outline" size="sm" onClick={handleExportJson} className="h-8 text-[10px]">
+              <Download className="w-3.5 h-3.5" />Workspace
             </Button>
-            <Button variant="outline" size="sm" onClick={() => importInputRef.current?.click()} className="h-8 text-[11px] border-white/10 text-slate-400">
-              <Upload className="w-3.5 h-3.5 mr-1" />导入
+            <Button variant="outline" size="sm" onClick={() => importInputRef.current?.click()} className="h-8 text-[10px]">
+              <Upload className="w-3.5 h-3.5" />导入
             </Button>
           </div>
         </aside>
 
-        <main className="min-w-0 flex flex-col bg-[#0b0d12]">
-          <div className="h-14 shrink-0 px-4 border-b border-white/8 flex items-center gap-3 bg-[#0e1117]">
-            <div className="flex-1 min-w-0 flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-3">
-              <Code2 className="w-3.5 h-3.5 text-slate-500" />
+        <main className="ds-panel min-w-0 flex flex-col overflow-hidden">
+          <div className="h-14 shrink-0 px-3 border-b border-[#ecece8] flex items-center gap-2 bg-white">
+            <div className="flex-1 min-w-0 flex items-center gap-2 rounded-lg border border-[#e3e3df] bg-[#fafaf8] px-3">
+              <Code2 className="w-3.5 h-3.5 text-[#96968f]" />
               <Input
                 value={filePath}
                 onChange={(e) => setFilePath(e.target.value)}
-                className="h-8 border-0 bg-transparent px-0 font-mono text-xs focus-visible:ring-0"
+                className="h-8 border-0 bg-transparent px-0 font-mono text-[11px] shadow-none focus-visible:ring-0"
                 placeholder="ui/home.py"
               />
             </div>
             {sourceChanged && (
-              <span className="hidden xl:inline-flex text-[11px] text-amber-300 bg-amber-400/10 border border-amber-400/20 rounded-md px-2 py-1">
-                画布配置已变化，草稿未自动覆盖
-              </span>
+              <span className="hidden 2xl:inline-flex text-[9px] ds-status-warning rounded-md px-2 py-1">工作区已变化</span>
             )}
-            <Button variant="ghost" size="sm" onClick={resetDraft} className="h-8 text-xs text-slate-400" title="用当前工作区重新生成">
-              <RotateCcw className="w-3.5 h-3.5 mr-1" />重置
+            <Button variant="ghost" size="sm" onClick={resetDraft} className="h-8 text-[10px]">
+              <RotateCcw className="w-3.5 h-3.5" />重置
             </Button>
-            <Button variant="ghost" size="sm" onClick={handleCopy} className="h-8 text-xs text-slate-400">
-              {copied ? <Check className="w-3.5 h-3.5 mr-1 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 mr-1" />}
+            <Button variant="outline" size="sm" onClick={handleCopy} className="h-8 text-[10px]">
+              {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
               {copied ? '已复制' : '复制'}
             </Button>
-            <Button size="sm" onClick={handleSaveToFile} disabled={isSaving || !draft.trim()} className="h-8 px-3 text-xs bg-violet-500 hover:bg-violet-400 text-white">
-              <Save className="w-3.5 h-3.5 mr-1.5" />{isSaving ? '写入中' : '写入工程'}
+            <Button size="sm" onClick={handleSaveToFile} disabled={isSaving || !draft.trim()} className="h-8 px-3 text-[10px]">
+              <Save className="w-3.5 h-3.5" />{isSaving ? '写入中' : '写入工程'}
             </Button>
           </div>
 
-          <div className="flex-1 min-h-0 relative">
+          <div className="flex-1 min-h-0 relative bg-[#fbfbf9]">
             <textarea
               id="codePreviewBox"
               spellCheck={false}
               value={draft}
               onChange={(e) => { setDraft(e.target.value); setDirty(true); }}
-              className="absolute inset-0 w-full h-full resize-none border-0 outline-none bg-[#090b10] text-[13px] leading-6 text-slate-200 font-mono p-5 selection:bg-violet-500/25"
+              className="absolute inset-0 w-full h-full resize-none border-0 outline-none bg-[#fbfbf9] text-[12px] leading-6 text-[#2f2f2c] font-mono p-5 selection:bg-black/10"
               aria-label="Python UI code editor"
             />
           </div>
 
-          <div className="h-9 shrink-0 border-t border-white/8 px-4 flex items-center justify-between bg-[#0e1117] text-[10px] text-slate-500">
+          <div className="h-9 shrink-0 border-t border-[#ecece8] px-4 flex items-center justify-between bg-white text-[9px] text-[#8d8d86]">
             <span>Python · UTF-8 · MaaPlus {dirty ? '· 已编辑' : '· 与工作区同步'}</span>
             <div className="flex items-center gap-3">
               {statusMsg && <span className="text-emerald-300">{statusMsg}</span>}
-              <button onClick={handleExportPython} className="hover:text-slate-200 transition-colors">下载 .py</button>
+              <button onClick={handleExportPython} className="font-medium text-[#666660] hover:text-[#1f1f1d] transition-colors">下载 .py</button>
             </div>
           </div>
         </main>
 
-        <aside className="border-l border-white/8 bg-[#10131a] p-4 overflow-y-auto">
+        <aside className="ds-panel p-4 overflow-y-auto">
           <div className="mb-4">
-            <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">Diagnostics</div>
-            <h3 className="text-sm font-semibold text-slate-100">生成诊断</h3>
-            <p className="text-[11px] text-slate-500 mt-1 leading-5">复杂定位符优先保留项目扫描到的原始表达式，避免生成器破坏手写能力。</p>
+            <div className="ds-eyebrow mb-1">Diagnostics</div>
+            <h3 className="text-sm font-semibold text-[#191918]">生成诊断</h3>
+            <p className="text-[11px] text-[#7d7d76] mt-1 leading-5">写入前检查生成模型，复杂表达式优先保留项目源码。</p>
           </div>
 
           <div className="grid grid-cols-3 gap-2 mb-4">
-            {(['error', 'warning', 'info'] as const).map((severity) => {
-              const count = rendered.diagnostics.filter((item) => item.severity === severity).length;
-              return (
-                <div key={severity} className="rounded-lg border border-white/8 bg-black/20 px-2.5 py-2 text-center">
-                  <div className="text-base font-semibold font-mono text-slate-200">{count}</div>
-                  <div className="text-[9px] uppercase tracking-wider text-slate-600">{severity}</div>
-                </div>
-              );
-            })}
+            {[
+              ['Error', errorCount],
+              ['Warning', warningCount],
+              ['Info', infoCount],
+            ].map(([label, count]) => (
+              <div key={String(label)} className="ds-subtle px-2 py-2 text-center">
+                <div className="text-base font-semibold font-mono text-[#2a2a28]">{count}</div>
+                <div className="text-[8px] uppercase tracking-wider text-[#999991]">{label}</div>
+              </div>
+            ))}
           </div>
 
           {rendered.diagnostics.length === 0 ? (
-            <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/5 p-3 text-[11px] text-emerald-300 flex gap-2">
-              <Check className="w-4 h-4 shrink-0" />
+            <div className="rounded-lg ds-status-success p-3 text-[10px] flex gap-2 leading-5">
+              <Check className="w-4 h-4 shrink-0 mt-0.5" />
               <span>当前生成模型没有发现结构问题，可以继续编辑或写入工程。</span>
             </div>
           ) : (
             <div className="space-y-2">
               {rendered.diagnostics.map((item, index) => {
                 const Icon = item.severity === 'error' ? CircleAlert : item.severity === 'warning' ? AlertTriangle : Info;
-                const tone = item.severity === 'error' ? 'text-rose-300 border-rose-400/20 bg-rose-400/5' : item.severity === 'warning' ? 'text-amber-300 border-amber-400/20 bg-amber-400/5' : 'text-sky-300 border-sky-400/20 bg-sky-400/5';
+                const tone = item.severity === 'error'
+                  ? 'ds-status-danger'
+                  : item.severity === 'warning'
+                  ? 'ds-status-warning'
+                  : 'border-[#e5e5e1] bg-[#f7f7f5] text-[#686862]';
                 return (
-                  <div key={`${item.className}-${item.locatorName}-${index}`} className={`rounded-lg border p-3 ${tone}`}>
-                    <div className="flex gap-2">
-                      <Icon className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div key={`${item.message}-${index}`} className={`rounded-lg border p-3 text-[10px] leading-5 ${tone}`}>
+                    <div className="flex items-start gap-2">
+                      <Icon className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                       <div className="min-w-0">
-                        <div className="text-[11px] leading-5">{item.message}</div>
+                        <div>{item.message}</div>
                         {(item.className || item.locatorName) && (
-                          <div className="font-mono text-[10px] opacity-60 mt-1 truncate">{[item.className, item.locatorName].filter(Boolean).join(' · ')}</div>
+                          <div className="mt-1 font-mono text-[9px] opacity-70 truncate">
+                            {[item.className, item.locatorName].filter(Boolean).join(' · ')}
+                          </div>
                         )}
                       </div>
                     </div>
@@ -317,12 +328,13 @@ export function CodePreview({
             </div>
           )}
 
-          <div className="mt-5 rounded-lg border border-white/8 bg-black/20 p-3 text-[10px] leading-5 text-slate-500">
-            <div className="text-slate-300 font-medium mb-1">输出原则</div>
-            <div>• 使用 <span className="font-mono text-slate-400">from maaplus import Template, OCR</span></div>
-            <div>• 不自动生成业务 action / click 逻辑</div>
-            <div>• 写入前保留人工编辑草稿</div>
-            <div>• 项目扫描结果可回到工作区继续调参</div>
+          <div className="mt-5 pt-4 border-t border-[#ecece8]">
+            <div className="ds-eyebrow mb-2">输出约束</div>
+            <div className="space-y-2 text-[10px] leading-5 text-[#7d7d76]">
+              <p>• 只生成 UI locator 定义，不生成业务 click/action。</p>
+              <p>• Template / OCR 使用当前 MaaPlus 公共 API。</p>
+              <p>• 无法安全还原的高级 locator 会给出诊断，而不是伪造代码。</p>
+            </div>
           </div>
         </aside>
       </div>
