@@ -5,7 +5,6 @@ import {
   Camera,
   Check,
   CheckCircle2,
-  ChevronRight,
   Clock3,
   Download,
   Eye,
@@ -14,11 +13,8 @@ import {
   History,
   Play,
   RefreshCcw,
-  RotateCcw,
-  SquareStack,
   Upload,
   X,
-  XCircle,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { BoundScreenshot, ClassBacktestMatrixRow, ClassBacktestSummary, UIClass } from '../types';
@@ -192,8 +188,15 @@ export function BacktestDashboard({
     URL.revokeObjectURL(url);
   };
 
+  const metricCards = summary ? [
+    { label: 'Pass Rate', value: `${summary.pass_rate.toFixed(1)}%`, meta: passRateDelta === null ? '首次运行' : `${passRateDelta >= 0 ? '+' : ''}${passRateDelta.toFixed(1)}% vs previous`, good: summary.pass_rate >= 95 },
+    { label: 'Passed', value: `${summary.passed_checks}/${summary.total_checks}`, meta: `${summary.total_screenshots} samples · ${summary.total_locators} locators`, good: failedChecks === 0 },
+    { label: 'Failed', value: `${failedChecks}`, meta: failedChecks === 0 ? 'No regression detected' : '需要优先复盘', good: failedChecks === 0 },
+    { label: 'Duration', value: `${Math.round(summary.duration_ms ?? 0)} ms`, meta: 'Whole regression run', good: true },
+  ] : [];
+
   return (
-    <div className="flex-1 min-h-0 bg-[#0b0d12] text-slate-100 overflow-hidden">
+    <div className="flex-1 min-h-0 bg-[#f5f5f2] text-[#191918] overflow-hidden p-3">
       <input
         ref={fileInputRef}
         type="file"
@@ -206,22 +209,24 @@ export function BacktestDashboard({
         }}
       />
 
-      <div className="h-full grid grid-cols-[300px_minmax(0,1fr)]">
-        <aside className="border-r border-white/8 bg-[#10131a] p-4 overflow-y-auto">
-          <div className="mb-5">
-            <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">Regression Lab</div>
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold">回归套件</h2>
-              <FlaskConical className="w-5 h-5 text-emerald-300" />
+      <div className="h-full grid grid-cols-[264px_minmax(0,1fr)] gap-3">
+        <aside className="ds-panel p-4 overflow-y-auto">
+          <div className="flex items-start justify-between gap-3 mb-5">
+            <div>
+              <div className="ds-eyebrow mb-1">Regression Lab</div>
+              <h2 className="text-sm font-semibold text-[#191918]">回归套件</h2>
+              <p className="text-[11px] leading-5 text-[#7d7d76] mt-1">定义本次范围，再运行、复盘失败并重复验证。</p>
             </div>
-            <p className="text-[11px] leading-5 text-slate-500 mt-1">先定义本次要验证的样本和定位符，再运行、复盘失败并重复验证。</p>
+            <div className="w-8 h-8 rounded-lg bg-[#f2f2ef] border border-[#e6e6e2] flex items-center justify-center">
+              <FlaskConical className="w-4 h-4 text-[#494945]" />
+            </div>
           </div>
 
-          <label className="block text-[10px] uppercase tracking-wider text-slate-500 mb-2">UI 类</label>
+          <label className="ds-eyebrow block mb-2">UI Class</label>
           <select
             value={selectedClassIndex}
             onChange={(e) => onSelectClassIndex(Number(e.target.value))}
-            className="w-full h-9 rounded-lg border border-white/10 bg-black/25 px-3 text-xs text-slate-200 outline-none mb-5"
+            className="w-full h-9 rounded-lg border border-[#e1e1dd] bg-white px-3 text-[11px] text-[#343431] outline-none mb-5 shadow-[0_1px_2px_rgba(20,20,18,0.02)]"
           >
             {uiClasses.map((cls, index) => (
               <option key={`${cls.name}-${index}`} value={index}>{cls.name}</option>
@@ -230,61 +235,67 @@ export function BacktestDashboard({
 
           <section className="mb-5">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] uppercase tracking-wider text-slate-500">样本 {selectedScreenshots.size}/{screenshots.length}</span>
-              <div className="flex items-center gap-2 text-[10px]">
-                <button onClick={() => setSelectedScreenshots(new Set(screenshots.map((s) => s.name)))} className="text-slate-500 hover:text-slate-200">全选</button>
-                <button onClick={() => setSelectedScreenshots(new Set())} className="text-slate-600 hover:text-slate-300">清空</button>
+              <span className="ds-eyebrow">Samples {selectedScreenshots.size}/{screenshots.length}</span>
+              <div className="flex items-center gap-2 text-[9px]">
+                <button onClick={() => setSelectedScreenshots(new Set(screenshots.map((s) => s.name)))} className="text-[#77776f] hover:text-[#222220]">全选</button>
+                <button onClick={() => setSelectedScreenshots(new Set())} className="text-[#a0a099] hover:text-[#444440]">清空</button>
               </div>
             </div>
-            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+            <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
               {screenshots.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-white/10 p-3 text-[11px] text-slate-600">暂无样本。先从画布绑定或上传截图。</div>
-              ) : screenshots.map((shot) => (
-                <button
-                  key={shot.name}
-                  onClick={() => toggleName(setSelectedScreenshots, shot.name)}
-                  className={`w-full flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors ${selectedScreenshots.has(shot.name) ? 'border-emerald-400/25 bg-emerald-400/10' : 'border-white/6 bg-black/10 opacity-60'}`}
-                >
-                  <span className={`w-4 h-4 rounded border flex items-center justify-center ${selectedScreenshots.has(shot.name) ? 'border-emerald-400 bg-emerald-400/15 text-emerald-300' : 'border-slate-700'}`}>
-                    {selectedScreenshots.has(shot.name) && <Check className="w-3 h-3" />}
-                  </span>
-                  <span className="truncate font-mono text-[11px] text-slate-300 flex-1">{shot.name}</span>
-                  <Camera className="w-3.5 h-3.5 text-slate-600" />
-                </button>
-              ))}
+                <div className="rounded-lg border border-dashed border-[#dfdfdb] bg-[#fafaf8] p-3 text-[10px] leading-5 text-[#92928b]">暂无样本。先从画布绑定或上传截图。</div>
+              ) : screenshots.map((shot) => {
+                const selected = selectedScreenshots.has(shot.name);
+                return (
+                  <button
+                    key={shot.name}
+                    onClick={() => toggleName(setSelectedScreenshots, shot.name)}
+                    className={`w-full flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors ${selected ? 'border-[#d7d7d2] bg-[#f5f5f2]' : 'border-[#ecece8] bg-white opacity-65'}`}
+                  >
+                    <span className={`w-4 h-4 rounded border flex items-center justify-center ${selected ? 'border-[#2a2a28] bg-[#2a2a28] text-white' : 'border-[#cecec8] bg-white'}`}>
+                      {selected && <Check className="w-3 h-3" />}
+                    </span>
+                    <span className="truncate font-mono text-[10px] text-[#4b4b46] flex-1">{shot.name}</span>
+                    <Camera className="w-3 h-3 text-[#a0a099]" />
+                  </button>
+                );
+              })}
             </div>
             <div className="grid grid-cols-2 gap-2 mt-2">
-              <Button variant="outline" size="sm" onClick={() => onBindCurrentScreenshot(selectedClassIndex)} className="h-7 text-[10px] border-white/10 text-slate-400">
-                <Camera className="w-3 h-3 mr-1" />绑定画面
+              <Button variant="outline" size="sm" onClick={() => onBindCurrentScreenshot(selectedClassIndex)} className="h-7 text-[9px]">
+                <Camera className="w-3 h-3" />绑定画面
               </Button>
-              <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} className="h-7 text-[10px] border-white/10 text-slate-400">
-                <Upload className="w-3 h-3 mr-1" />上传样本
+              <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} className="h-7 text-[9px]">
+                <Upload className="w-3 h-3" />上传
               </Button>
             </div>
           </section>
 
           <section className="mb-5">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] uppercase tracking-wider text-slate-500">定位符 {selectedLocators.size}/{locators.length}</span>
-              <div className="flex items-center gap-2 text-[10px]">
-                <button onClick={() => setSelectedLocators(new Set(locators.map((l) => l.name)))} className="text-slate-500 hover:text-slate-200">全选</button>
-                <button onClick={() => setSelectedLocators(new Set())} className="text-slate-600 hover:text-slate-300">清空</button>
+              <span className="ds-eyebrow">Locators {selectedLocators.size}/{locators.length}</span>
+              <div className="flex items-center gap-2 text-[9px]">
+                <button onClick={() => setSelectedLocators(new Set(locators.map((l) => l.name)))} className="text-[#77776f] hover:text-[#222220]">全选</button>
+                <button onClick={() => setSelectedLocators(new Set())} className="text-[#a0a099] hover:text-[#444440]">清空</button>
               </div>
             </div>
-            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-              {locators.map((locator) => (
-                <button
-                  key={locator.name}
-                  onClick={() => toggleName(setSelectedLocators, locator.name)}
-                  className={`w-full flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors ${selectedLocators.has(locator.name) ? 'border-sky-400/20 bg-sky-400/10' : 'border-white/6 bg-black/10 opacity-60'}`}
-                >
-                  <span className={`w-4 h-4 rounded border flex items-center justify-center ${selectedLocators.has(locator.name) ? 'border-sky-400 bg-sky-400/15 text-sky-300' : 'border-slate-700'}`}>
-                    {selectedLocators.has(locator.name) && <Check className="w-3 h-3" />}
-                  </span>
-                  <span className="truncate font-mono text-[11px] text-slate-300 flex-1">{locator.name}</span>
-                  <span className="text-[9px] text-slate-600">{locator.type}</span>
-                </button>
-              ))}
+            <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+              {locators.map((locator) => {
+                const selected = selectedLocators.has(locator.name);
+                return (
+                  <button
+                    key={locator.name}
+                    onClick={() => toggleName(setSelectedLocators, locator.name)}
+                    className={`w-full flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors ${selected ? 'border-[#d7d7d2] bg-[#f5f5f2]' : 'border-[#ecece8] bg-white opacity-65'}`}
+                  >
+                    <span className={`w-4 h-4 rounded border flex items-center justify-center ${selected ? 'border-[#2a2a28] bg-[#2a2a28] text-white' : 'border-[#cecec8] bg-white'}`}>
+                      {selected && <Check className="w-3 h-3" />}
+                    </span>
+                    <span className="truncate font-mono text-[10px] text-[#4b4b46] flex-1">{locator.name}</span>
+                    <span className="text-[8px] uppercase text-[#9b9b94]">{locator.type}</span>
+                  </button>
+                );
+              })}
             </div>
           </section>
 
@@ -292,168 +303,200 @@ export function BacktestDashboard({
             id="btnRunBacktest"
             onClick={handleStartBacktest}
             disabled={isRunning || selectedScreenshots.size === 0 || selectedLocators.size === 0}
-            className="w-full h-9 text-xs bg-emerald-500 hover:bg-emerald-400 text-[#07100b] font-semibold"
+            className="w-full h-9 text-[10px]"
           >
-            <Play className={`w-3.5 h-3.5 mr-1.5 ${isRunning ? 'animate-spin' : ''}`} />
-            {isRunning ? '正在运行回归…' : `运行 ${selectedScreenshots.size * selectedLocators.size} 项检查`}
+            <Play className={`w-3.5 h-3.5 ${isRunning ? 'animate-spin' : ''}`} />
+            {isRunning ? '运行中…' : `运行 ${selectedScreenshots.size * selectedLocators.size} checks`}
           </Button>
 
           {errorMessage && (
-            <div className="mt-3 rounded-lg border border-rose-400/20 bg-rose-400/5 p-3 text-[11px] text-rose-300 flex gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0" />{errorMessage}
+            <div className="mt-3 rounded-lg ds-status-danger p-3 text-[10px] leading-5 flex gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <span>{errorMessage}</span>
             </div>
           )}
         </aside>
 
-        <main className="min-w-0 overflow-y-auto p-5">
-          {!summary ? (
-            <div className="h-full min-h-[420px] flex items-center justify-center">
-              <div className="max-w-lg text-center">
-                <div className="mx-auto w-12 h-12 rounded-2xl border border-white/10 bg-white/[0.03] flex items-center justify-center mb-4">
-                  <SquareStack className="w-6 h-6 text-slate-500" />
-                </div>
-                <h3 className="text-sm font-semibold text-slate-200">把回测当成一个可重复的套件</h3>
-                <p className="text-xs leading-6 text-slate-500 mt-2">左侧选择样本和定位符。运行后默认只显示失败项，并可一键只重跑失败组合，避免每次面对整张矩阵。</p>
+        <main className="min-w-0 flex flex-col overflow-y-auto pr-0.5">
+          <div className="ds-panel p-4 flex items-center justify-between gap-4 mb-3">
+            <div>
+              <div className="ds-eyebrow mb-1">Regression Dashboard</div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-semibold text-[#191918]">{activeClass?.name || 'UI Class'}</h2>
+                <span className="rounded-md border border-[#e6e6e2] bg-[#f7f7f5] px-2 py-0.5 text-[9px] text-[#7d7d76]">{screenshots.length} samples</span>
+                <span className="rounded-md border border-[#e6e6e2] bg-[#f7f7f5] px-2 py-0.5 text-[9px] text-[#7d7d76]">{locators.length} locators</span>
               </div>
+              <p className="text-[10px] text-[#8d8d86] mt-1">失败优先复盘；调参后可只重跑失败集合。</p>
             </div>
-          ) : (
-            <div className="space-y-4 max-w-[1600px] mx-auto">
-              <header className="flex items-start justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    {failedChecks === 0 ? <CheckCircle2 className="w-5 h-5 text-emerald-300" /> : <XCircle className="w-5 h-5 text-rose-300" />}
-                    <h2 className="text-base font-semibold">{summary.ui_class} · {failedChecks === 0 ? '回归通过' : `${failedChecks} 项需要处理`}</h2>
-                  </div>
-                  <div className="text-[11px] text-slate-500 mt-1 font-mono">{summary.total_screenshots} samples × {summary.total_locators} locators · {summary.duration_ms ? `${summary.duration_ms.toFixed(1)} ms` : 'duration unavailable'}</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {failedChecks > 0 && (
-                    <Button variant="outline" size="sm" onClick={handleRerunFailures} disabled={isRunning} className="h-8 text-xs border-amber-400/20 text-amber-300">
-                      <RefreshCcw className="w-3.5 h-3.5 mr-1" />只重跑失败项
-                    </Button>
-                  )}
-                  <Button variant="ghost" size="sm" onClick={exportResult} className="h-8 text-xs text-slate-400">
-                    <Download className="w-3.5 h-3.5 mr-1" />结果 JSON
-                  </Button>
-                </div>
-              </header>
+            <div className="flex items-center gap-2">
+              {summary && failedChecks > 0 && (
+                <Button variant="outline" size="sm" onClick={handleRerunFailures} disabled={isRunning} className="h-8 text-[10px]">
+                  <RefreshCcw className="w-3.5 h-3.5" />重跑失败项
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={exportResult} disabled={!summary} className="h-8 text-[10px]">
+                <Download className="w-3.5 h-3.5" />导出结果
+              </Button>
+            </div>
+          </div>
 
-              <div className="grid grid-cols-4 gap-3">
-                <MetricCard label="通过率" value={`${summary.pass_rate}%`} hint={passRateDelta === null ? '首次运行' : `${passRateDelta >= 0 ? '+' : ''}${passRateDelta.toFixed(1)}% vs 上次`} icon={<BarChart3 className="w-4 h-4" />} />
-                <MetricCard label="通过检查" value={`${summary.passed_checks}/${summary.total_checks}`} hint={`${failedChecks} failed`} icon={<CheckCircle2 className="w-4 h-4" />} />
-                <MetricCard label="样本" value={`${summary.total_screenshots}`} hint={`${summary.matrix.filter((row) => !row.passed).length} failed rows`} icon={<Camera className="w-4 h-4" />} />
-                <MetricCard label="耗时" value={summary.duration_ms ? `${summary.duration_ms.toFixed(0)} ms` : '—'} hint="本次总识别耗时" icon={<Clock3 className="w-4 h-4" />} />
+          {summary ? (
+            <>
+              <div className="grid grid-cols-4 gap-3 mb-3">
+                {metricCards.map((metric) => (
+                  <div key={metric.label} className="ds-card p-3.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-medium text-[#85857e]">{metric.label}</span>
+                      <span className={`w-1.5 h-1.5 rounded-full ${metric.good ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                    </div>
+                    <div className="mt-1.5 text-xl font-semibold tracking-tight text-[#222220]">{metric.value}</div>
+                    <div className={`mt-1 text-[9px] ${metric.good ? 'text-emerald-300' : 'text-amber-300'}`}>{metric.meta}</div>
+                  </div>
+                ))}
               </div>
 
-              {summary.locator_stats && summary.locator_stats.length > 0 && (
-                <section className="rounded-xl border border-white/8 bg-[#10131a] p-3">
-                  <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-2">定位符稳定性</div>
-                  <div className="grid grid-cols-2 xl:grid-cols-4 gap-2">
-                    {summary.locator_stats.map((stat) => (
-                      <div key={stat.locator_name} className="rounded-lg border border-white/6 bg-black/15 px-3 py-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-mono text-[11px] text-slate-300 truncate">{stat.locator_name}</span>
-                          <span className={`font-mono text-[11px] ${stat.pass_rate === 100 ? 'text-emerald-300' : 'text-rose-300'}`}>{stat.pass_rate}%</span>
-                        </div>
-                        <div className="text-[10px] text-slate-600 mt-1">{stat.failed} failed · {stat.avg_elapsed_ms.toFixed(1)} ms avg</div>
-                      </div>
-                    ))}
+              <div className="grid grid-cols-[minmax(0,1fr)_240px] gap-3 mb-3">
+                <section className="ds-panel overflow-hidden min-w-0">
+                  <div className="h-12 px-3 border-b border-[#ecece8] flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <Filter className="w-3.5 h-3.5 text-[#8b8b84]" />
+                      <span className="text-[11px] font-semibold text-[#343431]">Run Results</span>
+                      <span className="text-[9px] text-[#999991]">{filteredRows.length}/{summary.matrix.length}</span>
+                    </div>
+                    <div className="flex items-center rounded-lg border border-[#e6e6e2] bg-[#f7f7f5] p-0.5">
+                      {(['failed', 'all', 'passed'] as ResultFilter[]).map((mode) => (
+                        <button
+                          key={mode}
+                          onClick={() => setFilterMode(mode)}
+                          className={`h-6 rounded-md px-2 text-[9px] font-medium transition-all ${filterMode === mode ? 'bg-white border border-[#dfdfdb] text-[#2d2d2a] shadow-[0_1px_1px_rgba(0,0,0,0.04)]' : 'border border-transparent text-[#8d8d86]'}`}
+                        >
+                          {mode === 'failed' ? `Failed ${failedChecks}` : mode === 'passed' ? 'Passed' : 'All'}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </section>
-              )}
 
-              <section className="rounded-xl border border-white/8 bg-[#10131a] overflow-hidden">
-                <div className="h-11 px-3 border-b border-white/8 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 text-xs font-medium text-slate-300"><Filter className="w-3.5 h-3.5 text-slate-500" />结果</div>
-                  <div className="flex items-center gap-1 rounded-lg bg-black/20 border border-white/6 p-0.5">
-                    {(['failed', 'all', 'passed'] as ResultFilter[]).map((mode) => (
-                      <button key={mode} onClick={() => setFilterMode(mode)} className={`px-2.5 py-1 text-[10px] rounded-md transition-colors ${filterMode === mode ? 'bg-white/8 text-slate-200' : 'text-slate-600 hover:text-slate-400'}`}>
-                        {mode === 'failed' ? `失败 ${summary.matrix.filter((r) => !r.passed).length}` : mode === 'passed' ? `通过 ${summary.matrix.filter((r) => r.passed).length}` : `全部 ${summary.matrix.length}`}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse text-xs">
-                    <thead className="bg-black/20 text-[10px] uppercase tracking-wider text-slate-600">
-                      <tr>
-                        <th className="px-3 py-2.5 min-w-[220px]">Sample</th>
-                        {summary.locator_stats?.map((stat) => <th key={stat.locator_name} className="px-3 py-2.5 min-w-[130px] text-center font-mono normal-case tracking-normal">{stat.locator_name}</th>) || Object.keys(summary.matrix[0]?.results || {}).map((name) => <th key={name} className="px-3 py-2.5 min-w-[130px] text-center font-mono normal-case tracking-normal">{name}</th>)}
-                        <th className="px-3 py-2.5 text-right">Review</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/6">
-                      {filteredRows.map((row) => {
-                        const shot = screenshots.find((item) => item.name === row.screenshot_name) || { id: row.screenshot_name, name: row.screenshot_name, dataUrl: row.thumbnail };
-                        return (
-                          <tr key={row.screenshot_name} className="hover:bg-white/[0.025]">
-                            <td className="px-3 py-3">
-                              <div className="flex items-center gap-2.5">
-                                <div className="w-14 h-9 rounded-md overflow-hidden bg-black border border-white/8 shrink-0">
-                                  {row.thumbnail && <img src={row.thumbnail} alt="" className="w-full h-full object-cover" />}
-                                </div>
-                                <div className="min-w-0">
-                                  <div className="font-mono text-[11px] text-slate-300 truncate">{row.screenshot_name}</div>
-                                  <div className={`text-[10px] mt-0.5 ${row.passed ? 'text-emerald-400' : 'text-rose-400'}`}>{row.passed ? 'PASS' : 'FAIL'}</div>
-                                </div>
-                              </div>
-                            </td>
-                            {Object.entries(row.results).map(([name, result]) => {
-                              const passed = result.passed ?? result.hit;
-                              return (
-                                <td key={name} className="px-3 py-3 text-center">
-                                  <div className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 font-mono text-[10px] ${passed ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-300' : 'border-rose-400/25 bg-rose-400/10 text-rose-300'}`} title={result.failure_reason || result.error || ''}>
-                                    {passed ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
-                                    {result.hit ? (result.score != null ? `${Math.round(result.score * 100)}%` : 'HIT') : 'MISS'}
+                  <div className="overflow-auto max-h-[430px]">
+                    <table className="w-full border-collapse text-left">
+                      <thead className="sticky top-0 z-10 bg-[#fafaf8]">
+                        <tr className="border-b border-[#ecece8] text-[8px] uppercase tracking-wider text-[#92928b]">
+                          <th className="px-3 py-2 font-semibold">Sample</th>
+                          <th className="px-3 py-2 font-semibold">Status</th>
+                          <th className="px-3 py-2 font-semibold">Failed locators</th>
+                          <th className="px-3 py-2 font-semibold">Time</th>
+                          <th className="px-3 py-2 font-semibold text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#efefeb]">
+                        {filteredRows.map((row) => {
+                          const failedNames = Object.entries(row.results)
+                            .filter(([, result]) => !(result.passed ?? result.hit))
+                            .map(([name]) => name);
+                          const totalTime = Object.values(row.results).reduce((sum, result) => sum + (result.elapsed_ms || 0), 0);
+                          const shot = screenshots.find((item) => item.name === row.screenshot_name) || {
+                            id: row.screenshot_name,
+                            name: row.screenshot_name,
+                            dataUrl: row.thumbnail,
+                          };
+                          return (
+                            <tr key={row.screenshot_name} className="hover:bg-[#fafaf8] transition-colors">
+                              <td className="px-3 py-2.5">
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <div className="w-10 h-7 rounded-md border border-[#e4e4e0] bg-[#f1f1ee] overflow-hidden shrink-0">
+                                    {row.thumbnail ? <img src={row.thumbnail} alt="" className="w-full h-full object-cover" /> : <Camera className="w-3.5 h-3.5 text-[#aaa9a2] m-auto mt-1.5" />}
                                   </div>
-                                  {result.expected_hit === false && <div className="text-[9px] text-slate-600 mt-1">expected miss</div>}
-                                </td>
-                              );
-                            })}
-                            <td className="px-3 py-3 text-right">
-                              <Button variant="ghost" size="sm" onClick={() => onInspectScreenshotOnCanvas(shot, row)} className="h-7 text-[10px] text-sky-300">
-                                <Eye className="w-3.5 h-3.5 mr-1" />画布复盘<ChevronRight className="w-3 h-3 ml-0.5" />
-                              </Button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-                {filteredRows.length === 0 && (
-                  <div className="py-10 text-center text-xs text-slate-600">当前筛选下没有结果。</div>
-                )}
-              </section>
-
-              {history.length > 0 && (
-                <section className="rounded-xl border border-white/8 bg-[#10131a] p-3">
-                  <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-slate-500 mb-2"><History className="w-3.5 h-3.5" />最近运行</div>
-                  <div className="flex gap-2 overflow-x-auto pb-1">
-                    {history.map((item, index) => (
-                      <div key={item.id} className="min-w-[150px] rounded-lg border border-white/6 bg-black/15 px-3 py-2">
-                        <div className="flex items-center justify-between"><span className="font-mono text-xs text-slate-300">{item.passRate}%</span>{index === 0 && <span className="text-[9px] text-emerald-400">current</span>}</div>
-                        <div className="text-[10px] text-slate-600 mt-1">{item.failedChecks} failed · {new Date(item.at).toLocaleTimeString()}</div>
-                      </div>
-                    ))}
+                                  <span className="font-mono text-[10px] text-[#444440] truncate">{row.screenshot_name}</span>
+                                </div>
+                              </td>
+                              <td className="px-3 py-2.5">
+                                <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[8px] font-semibold ${row.passed ? 'ds-status-success' : 'ds-status-danger'}`}>
+                                  {row.passed ? <CheckCircle2 className="w-2.5 h-2.5" /> : <X className="w-2.5 h-2.5" />}
+                                  {row.passed ? 'PASS' : 'FAIL'}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2.5">
+                                {failedNames.length ? (
+                                  <div className="flex flex-wrap gap-1">
+                                    {failedNames.slice(0, 3).map((name) => <span key={name} className="rounded bg-[#fff2f1] px-1.5 py-0.5 font-mono text-[8px] text-rose-300">{name}</span>)}
+                                    {failedNames.length > 3 && <span className="text-[8px] text-[#999991]">+{failedNames.length - 3}</span>}
+                                  </div>
+                                ) : <span className="text-[9px] text-[#a0a099]">—</span>}
+                              </td>
+                              <td className="px-3 py-2.5 text-[9px] text-[#77776f] font-mono">{totalTime.toFixed(1)} ms</td>
+                              <td className="px-3 py-2.5 text-right">
+                                <button onClick={() => onInspectScreenshotOnCanvas(shot, row)} className="inline-flex items-center gap-1 text-[9px] font-medium text-[#5e5e58] hover:text-[#1d1d1b]">
+                                  <Eye className="w-3 h-3" />画布复盘
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    {filteredRows.length === 0 && (
+                      <div className="py-12 text-center text-[10px] text-[#989891]">当前筛选没有结果。</div>
+                    )}
                   </div>
                 </section>
-              )}
+
+                <aside className="space-y-3">
+                  <div className="ds-panel p-3.5">
+                    <div className="flex items-center gap-2 mb-3">
+                      <BarChart3 className="w-3.5 h-3.5 text-[#77776f]" />
+                      <span className="text-[10px] font-semibold text-[#3b3b37]">Locator Health</span>
+                    </div>
+                    <div className="space-y-2.5">
+                      {(summary.locator_stats || []).length === 0 ? (
+                        <div className="text-[9px] leading-5 text-[#999991]">本次响应没有 locator stats。</div>
+                      ) : summary.locator_stats!.map((stat) => (
+                        <div key={stat.locator_name}>
+                          <div className="flex items-center justify-between gap-2 text-[9px]">
+                            <span className="font-mono text-[#55554f] truncate">{stat.locator_name}</span>
+                            <span className={stat.pass_rate >= 100 ? 'text-emerald-300' : 'text-amber-300'}>{stat.pass_rate.toFixed(0)}%</span>
+                          </div>
+                          <div className="mt-1 h-1 rounded-full bg-[#ededE9] overflow-hidden">
+                            <div className="h-full bg-[#363633]" style={{ width: `${Math.max(2, stat.pass_rate)}%` }} />
+                          </div>
+                          <div className="mt-1 text-[8px] text-[#a0a099]">avg {stat.avg_elapsed_ms.toFixed(1)} ms · {stat.failed} failed</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="ds-panel p-3.5">
+                    <div className="flex items-center gap-2 mb-3">
+                      <History className="w-3.5 h-3.5 text-[#77776f]" />
+                      <span className="text-[10px] font-semibold text-[#3b3b37]">Recent Runs</span>
+                    </div>
+                    <div className="space-y-2">
+                      {history.slice(0, 5).map((item) => (
+                        <div key={item.id} className="flex items-center justify-between gap-2 text-[9px]">
+                          <div className="min-w-0">
+                            <div className="text-[#55554f]">{new Date(item.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                            <div className="text-[8px] text-[#a0a099]">{item.totalChecks} checks · {Math.round(item.durationMs)} ms</div>
+                          </div>
+                          <span className={item.failedChecks === 0 ? 'text-emerald-300' : 'text-amber-300'}>{item.passRate.toFixed(1)}%</span>
+                        </div>
+                      ))}
+                      {history.length === 0 && <div className="text-[9px] text-[#999991]">尚无运行历史。</div>}
+                    </div>
+                  </div>
+                </aside>
+              </div>
+            </>
+          ) : (
+            <div className="ds-panel flex-1 min-h-[320px] flex items-center justify-center text-center">
+              <div className="max-w-sm px-8">
+                <div className="w-11 h-11 mx-auto rounded-xl border border-[#e5e5e1] bg-[#f7f7f5] flex items-center justify-center mb-3">
+                  <FlaskConical className="w-5 h-5 text-[#77776f]" />
+                </div>
+                <h3 className="text-sm font-semibold text-[#343431]">准备运行回归套件</h3>
+                <p className="text-[10px] leading-5 text-[#8f8f88] mt-1">左侧选择样本和 locator，然后运行。结果会按失败优先展示，并保留最近历史。</p>
+              </div>
             </div>
           )}
         </main>
       </div>
-    </div>
-  );
-}
-
-function MetricCard({ label, value, hint, icon }: { label: string; value: string; hint: string; icon: React.ReactNode }) {
-  return (
-    <div className="rounded-xl border border-white/8 bg-[#10131a] px-4 py-3">
-      <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-slate-600"><span>{label}</span><span className="text-slate-500">{icon}</span></div>
-      <div className="font-mono text-xl font-semibold text-slate-100 mt-2">{value}</div>
-      <div className="text-[10px] text-slate-600 mt-1">{hint}</div>
     </div>
   );
 }
