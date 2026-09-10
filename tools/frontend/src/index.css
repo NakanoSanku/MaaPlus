@@ -18,9 +18,6 @@
   --destructive: #d85c5c;
   --radius: 0.75rem;
 
-  /* The existing canvas/inspector surfaces use Tailwind's slate scale heavily.
-     Invert that semantic scale so mature dark-theme components become light
-     surfaces without touching their interaction code. */
   --color-slate-950: #ffffff;
   --color-slate-900: #fafaf8;
   --color-slate-800: #e7e7e3;
@@ -32,7 +29,6 @@
   --color-slate-200: #30302e;
   --color-slate-100: #1d1d1b;
 
-  /* MaaPlus uses a monochrome primary action, matching the reference system. */
   --color-sky-950: #eeeeeb;
   --color-sky-600: #1b1b1a;
   --color-sky-500: #292927;
@@ -80,8 +76,16 @@ body,
   overflow: hidden;
   background: #efefec;
   color: #191918;
-  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: Inter, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 button,
@@ -89,6 +93,13 @@ select,
 input,
 textarea {
   font: inherit;
+  line-height: inherit;
+}
+
+button,
+label,
+.ds-eyebrow {
+  text-wrap: pretty;
 }
 
 button:focus-visible,
@@ -150,10 +161,11 @@ textarea:focus-visible {
 
 .ds-eyebrow {
   color: #8a8a83;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 600;
-  letter-spacing: 0.11em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .ds-status-success {
