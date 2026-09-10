@@ -610,7 +610,7 @@ export function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-slate-950 text-slate-100 overflow-hidden font-sans select-none">
+    <div className="flex flex-col h-screen w-screen bg-[#f5f5f2] text-[#191918] overflow-hidden font-sans select-none">
       {/* Navbar */}
       <Navbar
         backendOnline={backendOnline}
@@ -631,11 +631,11 @@ export function App() {
       />
 
       {/* Main Tab Views */}
-      <div className="flex-1 flex overflow-hidden relative">
+      <div className="flex-1 flex overflow-hidden relative bg-[#f5f5f2] p-3">
         {currentTab === 'canvas' && (
           <>
             {/* Left: UI Explorer (Classes, Locators, & Bound Screenshots Tree) */}
-            <div className="w-72 shrink-0 h-full">
+            <div className="w-72 shrink-0 h-full mr-3 ds-panel overflow-hidden">
               <UIExplorer
                 uiClasses={uiClasses}
                 selectedClassIndex={selectedClassIndex}
@@ -694,7 +694,7 @@ export function App() {
             </div>
 
             {/* Center: Interactive Canvas & Device Bar */}
-            <div className="flex-1 flex flex-col h-full overflow-hidden">
+            <div className="flex-1 flex flex-col h-full overflow-hidden ds-panel">
               <ScreenCanvas
                 imageSrc={imageSrc}
                 imageDimensions={imageDimensions}
@@ -717,7 +717,7 @@ export function App() {
             </div>
 
             {/* Right: Locator Inspector */}
-            <div className="w-84 shrink-0 h-full">
+            <div className="w-84 shrink-0 h-full ml-3 ds-panel overflow-hidden">
               <LocatorInspector
                 locator={activeLocator}
                 className={activeClass?.name || ''}
@@ -764,8 +764,8 @@ export function App() {
 
       {/* Floating Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-12 right-6 z-50 bg-slate-900/95 border border-sky-500/50 text-sky-200 text-xs px-4 py-2.5 rounded-lg shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-bottom-2 duration-150 flex items-center space-x-2">
-          <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
+        <div className="fixed bottom-6 right-6 z-50 bg-white border border-[#deded9] text-[#343431] text-[11px] px-4 py-2.5 rounded-xl shadow-[0_10px_35px_rgba(20,20,18,0.12)] animate-in fade-in slide-in-from-bottom-2 duration-150 flex items-center space-x-2">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
           <span>{toastMessage}</span>
         </div>
       )}
