@@ -5,6 +5,7 @@ runtime, navigator, guard, trace, or debug writer between instances.
 
 ```python
 from maaplus import App, InstanceManager
+from maaplus.dev import create_adb_controller
 
 
 def build_app(config):

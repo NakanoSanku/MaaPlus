@@ -27,14 +27,14 @@ def run_doctor(*, resource_dir: str | Path | None = None) -> list[DoctorCheck]:
         checks.append(DoctorCheck("resource", path.exists(), str(path)))
 
     try:
-        from maa.toolkit import Toolkit
+        from .controller import find_adb_devices
 
-        devices = Toolkit.find_adb_devices()
+        devices = find_adb_devices()
         if devices:
             detail = "; ".join(
-                f"{getattr(device, 'address', '<unknown>')} "
-                f"(screen={getattr(device, 'screencap_methods', ())}, "
-                f"input={getattr(device, 'input_methods', ())})"
+                f"{device.address} "
+                f"(screen={device.screencap_methods}, "
+                f"input={device.input_methods})"
                 for device in devices
             )
             checks.append(DoctorCheck("adb", True, detail))

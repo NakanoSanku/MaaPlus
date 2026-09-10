@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from maa.controller import AdbController
 from maa.resource import Resource
 from maa.tasker import Tasker
 from maa.toolkit import Toolkit
@@ -17,6 +16,7 @@ from maaplus import (
     point,
     timing,
 )
+from maaplus.dev import create_adb_controller
 
 from .navigation.navigator import YYSNavigator
 from .navigation.scene import Scene
@@ -40,41 +40,6 @@ INTERACTION = InteractionConfig(
     ),
     action_interval=timing.random(60, 120),
 )
-
-
-def create_adb_controller(serial: str | None = None) -> AdbController:
-    devices = Toolkit.find_adb_devices()
-    if not devices:
-        raise RuntimeError("No ADB device found; run `maaplus doctor` for diagnostics")
-
-    if serial is not None:
-        matches = [device for device in devices if device.address == serial]
-        if not matches:
-            candidates = ", ".join(device.address for device in devices)
-            raise RuntimeError(f"ADB device {serial!r} not found; candidates: {candidates}")
-        device = matches[0]
-    elif len(devices) == 1:
-        device = devices[0]
-    else:
-        candidates = ", ".join(device.address for device in devices)
-        raise RuntimeError(f"Multiple ADB devices found ({candidates}); pass serial=... explicitly")
-
-    print(
-        f"Using ADB device {device.address}; "
-        f"screencap={device.screencap_methods}, input={device.input_methods}"
-    )
-    controller = AdbController(
-        adb_path=device.adb_path,
-        address=device.address,
-        screencap_methods=device.screencap_methods,
-        input_methods=device.input_methods,
-        config=device.config,
-    )
-
-    job = controller.post_connection().wait()
-    if not job.succeeded:
-        raise RuntimeError(f"Failed to connect ADB device: {device.address}")
-    return controller
 
 
 def load_resource() -> Resource:

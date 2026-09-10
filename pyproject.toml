@@ -10,7 +10,11 @@ dependencies = [
 
 [project.optional-dependencies]
 debug = ["pillow>=12.3.0"]
-dev = ["pillow>=12.3.0"]
+dev = [
+    "pillow>=12.3.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -32,4 +36,7 @@ addopts = "-ra"
 dev = [
     "pytest>=8.0",
     "pillow>=12.3.0",
+    "fastapi>=0.141.1",
+    "uvicorn>=0.52.4",
+    "httpx>=0.28.1",
 ]

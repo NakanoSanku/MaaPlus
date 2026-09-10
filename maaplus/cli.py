@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,11 @@ def main(argv: list[str] | None = None) -> int:
     trace = subparsers.add_parser("trace", help="summarize one isolated trace session")
     trace.add_argument("session", type=Path)
 
+    ui = subparsers.add_parser("ui", help="launch interactive UI Workbench in browser")
+    ui.add_argument("--host", default="127.0.0.1", help="host address (default: 127.0.0.1)")
+    ui.add_argument("--port", type=int, default=8080, help="port number (default: 8080)")
+    ui.add_argument("--no-browser", action="store_true", help="do not open browser automatically")
+
     args = parser.parse_args(argv)
     if args.command == "init":
         return _init(Path(args.directory), force=args.force)
@@ -45,6 +51,8 @@ def main(argv: list[str] | None = None) -> int:
         return _doctor(args)
     if args.command == "trace":
         return _trace(args)
+    if args.command == "ui":
+        return _ui(args)
     return 2
 
 
@@ -116,6 +124,28 @@ def _trace(args: argparse.Namespace) -> int:
     print(f"events: {len(events)}")
     print(f"images: {len(images)}")
     print(f"failure_reports: {len(failures)}")
+    return 0
+
+
+def _ui(args: argparse.Namespace) -> int:
+    import importlib.util
+    tools_script = Path(__file__).resolve().parent.parent / "tools" / "ui_workbench.py"
+    if not tools_script.exists():
+        print(f"ui: {tools_script} not found")
+        return 2
+    spec = importlib.util.spec_from_file_location("ui_workbench", tools_script)
+    if spec is None or spec.loader is None:
+        print(f"ui: failed to load module spec for {tools_script}")
+        return 2
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["ui_workbench"] = mod
+    spec.loader.exec_module(mod)
+    mod.run_server(
+        host=args.host,
+        port=args.port,
+        project_root=Path.cwd(),
+        open_browser=not args.no_browser,
+    )
     return 0
 
 
