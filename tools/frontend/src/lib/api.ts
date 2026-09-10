@@ -114,6 +114,89 @@ export async function runBacktest(locator: LocatorConfig, fixture_dir?: string):
   return readJson(res, 'Backtest failed');
 }
 
+function enrichRegressionSummary(
+  summary: ClassBacktestSummary,
+  params: { locators: LocatorConfig[]; screenshots: BoundScreenshot[] }
+): ClassBacktestSummary {
+  if (!summary.success || !summary.matrix) return summary;
+
+  const screenshotMap = new Map(params.screenshots.map((shot) => [shot.name, shot]));
+  const stats = new Map<string, { total: number; passed: number; failed: number; elapsed: number }>();
+  let totalChecks = 0;
+  let passedChecks = 0;
+  let durationMs = 0;
+
+  const matrix = summary.matrix.map((row) => {
+    const expectations = screenshotMap.get(row.screenshot_name)?.expectations || {};
+    const results = Object.fromEntries(
+      Object.entries(row.results).map(([name, result]) => {
+        const expectation = expectations[name] || {};
+        const expectedHit = expectation.hit ?? true;
+        const minScore = expectation.min_score;
+        const hitMatches = Boolean(result.hit) === expectedHit;
+        const scoreMatches = !expectedHit || minScore == null || (result.score ?? 0) >= minScore;
+        const passed = !result.error && hitMatches && scoreMatches;
+        const elapsed = Number(result.elapsed_ms || 0);
+
+        totalChecks += 1;
+        durationMs += elapsed;
+        if (passed) passedChecks += 1;
+
+        const stat = stats.get(name) || { total: 0, passed: 0, failed: 0, elapsed: 0 };
+        stat.total += 1;
+        stat.elapsed += elapsed;
+        if (passed) stat.passed += 1;
+        else stat.failed += 1;
+        stats.set(name, stat);
+
+        let failureReason: string | null = null;
+        if (result.error) failureReason = result.error;
+        else if (!hitMatches) failureReason = `expected ${expectedHit ? 'HIT' : 'MISS'}, got ${result.hit ? 'HIT' : 'MISS'}`;
+        else if (!scoreMatches) failureReason = `score ${(result.score ?? 0).toFixed(3)} < ${Number(minScore).toFixed(3)}`;
+
+        return [name, {
+          ...result,
+          passed,
+          expected_hit: expectedHit,
+          min_score: minScore ?? null,
+          failure_reason: failureReason,
+        }];
+      })
+    );
+
+    return {
+      ...row,
+      results,
+      passed: Object.values(results).every((result) => result.passed),
+    };
+  });
+
+  const locatorStats = params.locators.map((locator) => {
+    const stat = stats.get(locator.name) || { total: 0, passed: 0, failed: 0, elapsed: 0 };
+    return {
+      locator_name: locator.name,
+      total: stat.total,
+      passed: stat.passed,
+      failed: stat.failed,
+      pass_rate: stat.total ? Math.round((stat.passed / stat.total) * 1000) / 10 : 0,
+      avg_elapsed_ms: stat.total ? Math.round((stat.elapsed / stat.total) * 100) / 100 : 0,
+    };
+  });
+
+  return {
+    ...summary,
+    total_screenshots: matrix.length,
+    total_locators: params.locators.length,
+    total_checks: totalChecks,
+    passed_checks: passedChecks,
+    failed_checks: Math.max(0, totalChecks - passedChecks),
+    pass_rate: totalChecks ? Math.round((passedChecks / totalChecks) * 1000) / 10 : 0,
+    duration_ms: Math.round(durationMs * 100) / 100,
+    locator_stats: locatorStats,
+    matrix,
+  };
+}
+
 export async function runClassBacktest(params: {
   ui_class: string;
   locators: LocatorConfig[];
@@ -125,7 +208,8 @@ export async function runClassBacktest(params: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
-  return readJson(res, 'Regression run failed');
+  const summary = await readJson<ClassBacktestSummary>(res, 'Regression run failed');
+  return enrichRegressionSummary(summary, params);
 }
 
 export async function saveBoundScreenshot(
