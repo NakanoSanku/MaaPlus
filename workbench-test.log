@@ -4,23 +4,25 @@ cachedir: .pytest_cache
 rootdir: /home/runner/work/MaaPlus/MaaPlus
 configfile: pyproject.toml
 plugins: anyio-4.15.1
-collecting ... collected 4 items / 1 error
+collecting ... collected 12 items
 
-==================================== ERRORS ====================================
-___________________ ERROR collecting tests/test_workbench.py ___________________
-tests/test_workbench.py:10: in <module>
-    from fastapi.testclient import TestClient
-/opt/hostedtoolcache/Python/3.12.14/x64/lib/python3.12/site-packages/fastapi/testclient.py:1: in <module>
-    from starlette.testclient import TestClient as TestClient  # noqa
-    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-/opt/hostedtoolcache/Python/3.12.14/x64/lib/python3.12/site-packages/starlette/testclient.py:41: in <module>
-    raise RuntimeError(
-E   RuntimeError: The starlette.testclient module requires the httpx2 package to be installed.
-E   You can install this with:
-E       $ pip install httpx2
-=========================== short test summary info ============================
-ERROR tests/test_workbench.py - RuntimeError: The starlette.testclient module requires the httpx2 package to be installed.
-You can install this with:
-    $ pip install httpx2
-!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
-=============================== 1 error in 0.87s ===============================
+tests/test_workbench.py::test_html_file_integrity PASSED                 [  8%]
+tests/test_workbench.py::test_device_discovery PASSED                    [ 16%]
+tests/test_workbench.py::test_parse_ui_file PASSED                       [ 25%]
+tests/test_workbench.py::test_scan_project_ui PASSED                     [ 33%]
+tests/test_workbench.py::test_save_template_image PASSED                 [ 41%]
+tests/test_workbench.py::test_fastapi_endpoints PASSED                   [ 50%]
+tests/test_workbench.py::test_recognize_api PASSED                       [ 58%]
+tests/test_workbench.py::test_class_backtest_and_bound_screenshots PASSED [ 66%]
+tests/test_workbench_device_fallback.py::test_raw_adb_discovery_is_available_without_maa_device_helpers PASSED [ 75%]
+tests/test_workbench_device_fallback.py::test_connect_uses_verified_raw_adb_instead_of_mock_success PASSED [ 83%]
+tests/test_workbench_device_fallback.py::test_connect_reports_failure_when_real_adb_connection_cannot_be_verified PASSED [ 91%]
+tests/test_workbench_device_fallback.py::test_network_device_runs_adb_connect_then_rechecks_state PASSED [100%]
+
+=============================== warnings summary ===============================
+../../../../../opt/hostedtoolcache/Python/3.12.14/x64/lib/python3.12/site-packages/starlette/testclient.py:53
+  /opt/hostedtoolcache/Python/3.12.14/x64/lib/python3.12/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 12 passed, 1 warning in 0.85s =========================
