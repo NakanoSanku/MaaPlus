@@ -14,10 +14,36 @@ export interface RenderedCode {
   diagnostics: CodeDiagnostic[];
 }
 
+export type LocatorRenderer = (
+  locator: LocatorConfig,
+  className: string,
+  diagnostics: CodeDiagnostic[]
+) => string;
+
+const locatorRenderers = new Map<string, LocatorRenderer>();
+
+/** Register a code renderer without changing the Code Studio component. */
+export function registerLocatorRenderer(type: string, renderer: LocatorRenderer): void {
+  locatorRenderers.set(type, renderer);
+}
+
 function pythonString(value: string): string {
   return JSON.stringify(value).replace(/\\u2028|\\u2029/g, (match) =>
     match === '\\u2028' ? '\\u2028' : '\\u2029'
   );
+}
+
+function pythonLiteral(value: unknown): string {
+  if (value === null || value === undefined) return 'None';
+  if (typeof value === 'string') return pythonString(value);
+  if (typeof value === 'boolean') return value ? 'True' : 'False';
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : 'None';
+  if (Array.isArray(value)) return `[${value.map(pythonLiteral).join(', ')}]`;
+  if (typeof value === 'object') {
+    const fields = Object.entries(value as Record<string, unknown>);
+    return `{${fields.map(([key, item]) => `${pythonString(key)}: ${pythonLiteral(item)}`).join(', ')}}`;
+  }
+  return pythonString(String(value));
 }
 
 function pythonList(values: string[]): string {
@@ -33,6 +59,79 @@ function safeIdentifier(value: string): boolean {
   return /^[A-Za-z_]\w*$/.test(value);
 }
 
+const WORKBENCH_FIELDS = new Set(['name', 'type', 'source', 'template', 'threshold', 'roi', 'expected']);
+
+function appendPreservedKwargs(locator: LocatorConfig, args: string[]): void {
+  for (const [key, value] of Object.entries(locator)) {
+    if (WORKBENCH_FIELDS.has(key) || value === undefined) continue;
+    if (!safeIdentifier(key)) continue;
+    args.push(`${key}=${pythonLiteral(value)}`);
+  }
+}
+
+registerLocatorRenderer('Template', (locator, className, diagnostics) => {
+  const templates = Array.isArray(locator.template) ? locator.template.filter(Boolean) : [];
+  if (templates.length === 0) {
+    diagnostics.push({
+      severity: 'warning',
+      message: 'Template 尚未配置模板图片路径。',
+      className,
+      locatorName: locator.name,
+    });
+  }
+
+  const args = [`template=${pythonList(templates.length ? templates : [`${locator.name}.png`])}`];
+  const threshold = Number(locator.threshold ?? 0.85);
+  args.push(`threshold=[${Number.isFinite(threshold) ? threshold : 0.85}]`);
+  const roi = pythonRoi(locator.roi);
+  if (roi) args.push(`roi=${roi}`);
+  appendPreservedKwargs(locator, args);
+  return `    ${locator.name} = Template(\n        ${args.join(',\n        ')},\n    )`;
+});
+
+registerLocatorRenderer('OCR', (locator, className, diagnostics) => {
+  const expected = Array.isArray(locator.expected) ? locator.expected.filter(Boolean) : [];
+  if (expected.length === 0) {
+    diagnostics.push({
+      severity: 'warning',
+      message: 'OCR 尚未配置 expected 文本。',
+      className,
+      locatorName: locator.name,
+    });
+  }
+
+  const args = [`expected=${pythonList(expected)}`];
+  const roi = pythonRoi(locator.roi);
+  if (roi) args.push(`roi=${roi}`);
+  appendPreservedKwargs(locator, args);
+  return `    ${locator.name} = OCR(\n        ${args.join(',\n        ')},\n    )`;
+});
+
+registerLocatorRenderer('JCustomRecognition', (locator, className, diagnostics) => {
+  const customName = locator.custom_recognition;
+  if (!customName) {
+    diagnostics.push({
+      severity: 'warning',
+      message: 'JCustomRecognition 缺少 custom_recognition。',
+      className,
+      locatorName: locator.name,
+    });
+  }
+
+  const args: string[] = [];
+  for (const [key, value] of Object.entries(locator)) {
+    if (['name', 'type', 'source', 'template', 'threshold', 'expected'].includes(key) || value === undefined) continue;
+    if (key === 'roi') {
+      const roi = pythonRoi(locator.roi);
+      if (roi) args.push(`roi=${roi}`);
+      continue;
+    }
+    if (!safeIdentifier(key)) continue;
+    args.push(`${key}=${pythonLiteral(value)}`);
+  }
+  return `    ${locator.name} = JCustomRecognition(\n        ${args.join(',\n        ')},\n    )`;
+});
+
 function renderLocator(
   locator: LocatorConfig,
   className: string,
@@ -47,39 +146,8 @@ function renderLocator(
     });
   }
 
-  if (locator.type === 'Template') {
-    const templates = Array.isArray(locator.template) ? locator.template.filter(Boolean) : [];
-    if (templates.length === 0) {
-      diagnostics.push({
-        severity: 'warning',
-        message: 'Template 尚未配置模板图片路径。',
-        className,
-        locatorName: locator.name,
-      });
-    }
-    const args = [`template=${pythonList(templates.length ? templates : [`${locator.name}.png`])}`];
-    const threshold = Number(locator.threshold ?? 0.85);
-    args.push(`threshold=[${Number.isFinite(threshold) ? threshold : 0.85}]`);
-    const roi = pythonRoi(locator.roi);
-    if (roi) args.push(`roi=${roi}`);
-    return `    ${locator.name} = Template(\n        ${args.join(',\n        ')},\n    )`;
-  }
-
-  if (locator.type === 'OCR') {
-    const expected = Array.isArray(locator.expected) ? locator.expected.filter(Boolean) : [];
-    if (expected.length === 0) {
-      diagnostics.push({
-        severity: 'warning',
-        message: 'OCR 尚未配置 expected 文本。',
-        className,
-        locatorName: locator.name,
-      });
-    }
-    const args = [`expected=${pythonList(expected)}`];
-    const roi = pythonRoi(locator.roi);
-    if (roi) args.push(`roi=${roi}`);
-    return `    ${locator.name} = OCR(\n        ${args.join(',\n        ')},\n    )`;
-  }
+  const renderer = locatorRenderers.get(locator.type);
+  if (renderer) return renderer(locator, className, diagnostics);
 
   if (typeof locator.source === 'string' && locator.source.trim()) {
     diagnostics.push({
@@ -93,7 +161,7 @@ function renderLocator(
 
   diagnostics.push({
     severity: 'warning',
-    message: `${locator.type} 暂无可视化生成器，已生成 TODO 占位。`,
+    message: `${locator.type} 暂无结构化渲染器，已生成 TODO 占位；可通过 registerLocatorRenderer() 扩展。`,
     className,
     locatorName: locator.name,
   });
