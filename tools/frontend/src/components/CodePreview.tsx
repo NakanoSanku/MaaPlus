@@ -170,14 +170,14 @@ export function CodePreview({
           <div className="space-y-2 mb-5">
             <div className="text-[10px] uppercase tracking-wider text-slate-500">生成范围</div>
             <button
-              onClick={() => { setScope('active'); setDirty(false); }}
+              onClick={() => { setScope('active'); setDirty(false); setFilePath(suggestedUiPath(activeClass)); }}
               className={`w-full text-left rounded-lg border px-3 py-2.5 transition-colors ${scope === 'active' ? 'border-violet-400/40 bg-violet-400/10' : 'border-white/8 bg-white/[0.02] hover:bg-white/[0.04]'}`}
             >
               <div className="text-xs font-medium text-slate-200">当前 UI 类</div>
               <div className="text-[11px] text-slate-500 mt-0.5 truncate">{activeClass?.name || '未选择'}</div>
             </button>
             <button
-              onClick={() => { setScope('all'); setDirty(false); }}
+              onClick={() => { setScope('all'); setDirty(false); setFilePath('ui/workbench_generated.py'); }}
               className={`w-full text-left rounded-lg border px-3 py-2.5 transition-colors ${scope === 'all' ? 'border-violet-400/40 bg-violet-400/10' : 'border-white/8 bg-white/[0.02] hover:bg-white/[0.04]'}`}
             >
               <div className="text-xs font-medium text-slate-200">全部 UI 类</div>
