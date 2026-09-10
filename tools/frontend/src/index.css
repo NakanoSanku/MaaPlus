@@ -17,6 +17,25 @@
   --warning: #fbbf24;
   --destructive: #fb7185;
   --radius: 0.625rem;
+
+  /* Remap legacy canvas utilities into the v2 visual system without
+     destabilizing the mature canvas/ROI interaction code. */
+  --color-slate-950: #090b10;
+  --color-slate-900: #10131a;
+  --color-slate-800: #1a1f29;
+  --color-slate-700: #2a313d;
+  --color-slate-600: #505968;
+  --color-slate-500: #747e8f;
+  --color-slate-400: #9aa3b2;
+  --color-slate-300: #c1c7d1;
+  --color-slate-200: #dde1e7;
+  --color-slate-100: #f3f4f6;
+  --color-sky-950: #21143a;
+  --color-sky-600: #7c3aed;
+  --color-sky-500: #8b5cf6;
+  --color-sky-400: #a78bfa;
+  --color-sky-300: #c4b5fd;
+  --color-sky-200: #ddd6fe;
 }
 
 * {
