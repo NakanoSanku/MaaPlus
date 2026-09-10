@@ -4,12 +4,11 @@ import {
   Code2,
   FlaskConical,
   FolderOpen,
-  Image as ImageIcon,
   Layers3,
   MonitorDot,
   Plug,
-  RefreshCw,
   Radio,
+  RefreshCw,
   Smartphone,
   Unplug,
 } from 'lucide-react';
@@ -35,9 +34,9 @@ interface NavbarProps {
 }
 
 const tabs = [
-  { id: 'canvas', label: '定位工作台', short: '定位', description: 'Capture & locate', icon: Layers3 },
-  { id: 'backtest', label: 'Regression Lab', short: '回归', description: 'Test & triage', icon: FlaskConical },
-  { id: 'code', label: 'Code Studio', short: '代码', description: 'Review & ship', icon: Code2 },
+  { id: 'canvas', label: '定位工作台', icon: Layers3 },
+  { id: 'backtest', label: 'Regression Lab', icon: FlaskConical },
+  { id: 'code', label: 'Code Studio', icon: Code2 },
 ];
 
 export function Navbar({
@@ -60,99 +59,92 @@ export function Navbar({
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   return (
-    <header className="h-[68px] shrink-0 border-b border-white/8 bg-[#0c0f14]/95 backdrop-blur-xl px-4 grid grid-cols-[minmax(230px,1fr)_auto_minmax(420px,1fr)] items-center gap-4 z-30 select-none">
-      <div className="flex items-center gap-3 min-w-0">
-        <div className="w-9 h-9 rounded-xl border border-violet-400/20 bg-violet-400/10 flex items-center justify-center shadow-[0_8px_30px_rgba(139,92,246,0.08)]">
-          <MonitorDot className="w-5 h-5 text-violet-300" />
+    <header className="h-14 shrink-0 border-b border-[#e7e7e3] bg-white px-4 grid grid-cols-[minmax(220px,1fr)_auto_minmax(430px,1fr)] items-center gap-4 z-30 select-none">
+      <div className="flex items-center gap-2.5 min-w-0">
+        <div className="w-7 h-7 rounded-lg bg-[#1b1b1a] text-white flex items-center justify-center shadow-[0_1px_2px_rgba(0,0,0,0.12)]">
+          <MonitorDot className="w-4 h-4" />
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 leading-tight">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold tracking-tight text-slate-100">MaaPlus</span>
-            <span className="text-xs text-slate-500">UI Workbench</span>
-            <span className="rounded-md border border-white/8 bg-white/[0.03] px-1.5 py-0.5 text-[9px] font-mono text-slate-500">v2</span>
+            <span className="text-xs font-semibold tracking-tight text-[#191918]">MaaPlus</span>
+            <span className="text-[10px] text-[#8a8a83]">UI Workbench</span>
           </div>
-          <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-slate-600">
-            <span className={`w-1.5 h-1.5 rounded-full ${backendOnline ? 'bg-emerald-400' : 'bg-rose-400'}`} />
-            {backendOnline ? 'backend online' : 'offline workspace'}
-            {connectedDevice && <><span>·</span><span className="truncate max-w-[140px]">{connectedDevice === 'offline' ? 'offline device mode' : connectedDevice}</span></>}
+          <div className="mt-0.5 flex items-center gap-1.5 text-[9px] text-[#999991]">
+            <span className={`w-1.5 h-1.5 rounded-full ${backendOnline ? 'bg-emerald-500' : 'bg-[#c4c4be]'}`} />
+            <span>{backendOnline ? 'Backend online' : 'Offline workspace'}</span>
+            {connectedDevice && (
+              <>
+                <span>·</span>
+                <span className="truncate max-w-[120px]">{connectedDevice === 'offline' ? 'Offline device' : connectedDevice}</span>
+              </>
+            )}
           </div>
         </div>
       </div>
 
-      <nav className="flex items-center rounded-xl border border-white/8 bg-black/20 p-1 shadow-inner">
-        {tabs.map((tab, index) => {
+      <nav className="flex items-center rounded-lg border border-[#e7e7e3] bg-[#f7f7f5] p-0.5">
+        {tabs.map((tab) => {
           const Icon = tab.icon;
           const active = currentTab === tab.id;
           return (
             <button
               key={tab.id}
               onClick={() => onTabChange(tab.id)}
-              className={`group min-w-[132px] rounded-lg px-3 py-1.5 flex items-center gap-2.5 text-left transition-all ${active ? 'bg-white/[0.08] shadow-sm text-slate-100' : 'text-slate-500 hover:bg-white/[0.035] hover:text-slate-300'}`}
+              className={`h-8 rounded-md px-3 flex items-center gap-1.5 text-[11px] font-medium transition-all ${
+                active
+                  ? 'bg-white text-[#191918] shadow-[0_1px_2px_rgba(20,20,18,0.06)] border border-[#e1e1dd]'
+                  : 'text-[#77776f] border border-transparent hover:text-[#30302e]'
+              }`}
             >
-              <span className={`w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-mono border ${active ? 'border-violet-400/25 bg-violet-400/10 text-violet-300' : 'border-white/6 bg-black/20 text-slate-600'}`}>
-                {index + 1}
-              </span>
-              <span className="min-w-0">
-                <span className="block text-[11px] font-medium truncate">{tab.label}</span>
-                <span className="hidden 2xl:block text-[9px] text-slate-600 group-hover:text-slate-500 truncate">{tab.description}</span>
-              </span>
-              <Icon className={`w-3.5 h-3.5 ml-auto ${active ? 'text-violet-300' : 'text-slate-700'}`} />
+              <Icon className="w-3.5 h-3.5" />
+              <span>{tab.label}</span>
             </button>
           );
         })}
       </nav>
 
-      <div className="justify-self-end flex items-center gap-2 min-w-0">
-        <div className="hidden xl:flex items-center rounded-lg border border-white/8 bg-black/20 h-8">
-          <Smartphone className="w-3.5 h-3.5 ml-2.5 text-slate-600" />
+      <div className="justify-self-end flex items-center gap-1.5 min-w-0">
+        <div className="hidden xl:flex h-8 items-center rounded-lg border border-[#e1e1dd] bg-white shadow-[0_1px_2px_rgba(20,20,18,0.02)]">
+          <Smartphone className="w-3.5 h-3.5 ml-2.5 text-[#8a8a83]" />
           <select
             value={selectedDevice}
             onChange={(e) => onSelectDevice(e.target.value)}
-            className="bg-transparent outline-none text-[11px] text-slate-300 pl-2 pr-1 max-w-[150px] h-full"
+            className="h-full max-w-[150px] bg-transparent pl-2 pr-1 text-[10px] text-[#4d4d48] outline-none"
             title="选择设备"
           >
-            <option value="offline" className="bg-[#10131a]">离线模式</option>
+            <option value="offline">离线模式</option>
             {devices.map((device) => (
-              <option key={device.address} value={device.address} className="bg-[#10131a]">{device.name || device.address}</option>
+              <option key={device.address} value={device.address}>{device.name || device.address}</option>
             ))}
           </select>
-          <button onClick={onRefreshDevices} className="h-full px-2 text-slate-600 hover:text-slate-300" title="重新扫描设备">
+          <button
+            onClick={onRefreshDevices}
+            className="h-full px-2 text-[#92928b] transition-colors hover:text-[#30302e]"
+            title="重新扫描设备"
+          >
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
         </div>
 
         {connectedDevice ? (
-          <Button id="btnConnectDevice" variant="ghost" size="sm" onClick={onDisconnectDevice} className="h-8 px-2.5 text-[11px] text-rose-300 hover:bg-rose-400/10">
-            <Unplug className="w-3.5 h-3.5 mr-1" />断开
+          <Button id="btnConnectDevice" variant="ghost" size="sm" onClick={onDisconnectDevice} className="h-8 px-2.5 text-[10px] text-rose-300 hover:bg-[#fff3f2]">
+            <Unplug className="w-3.5 h-3.5" />断开
           </Button>
         ) : (
-          <Button id="btnConnectDevice" variant="outline" size="sm" onClick={onConnectDevice} className="h-8 px-2.5 text-[11px] border-white/10 text-slate-300 hover:bg-white/5">
-            <Plug className="w-3.5 h-3.5 mr-1" />连接
+          <Button id="btnConnectDevice" variant="outline" size="sm" onClick={onConnectDevice} className="h-8 px-2.5 text-[10px]">
+            <Plug className="w-3.5 h-3.5" />连接
           </Button>
         )}
-
-        <div className="w-px h-5 bg-white/8" />
-
-        <Button
-          id="btnTakeScreenshot"
-          size="sm"
-          onClick={onCaptureScreenshot}
-          disabled={isCapturing}
-          className="h-8 px-3 text-[11px] bg-violet-500 hover:bg-violet-400 text-white"
-          title="截图（R）"
-        >
-          <Camera className={`w-3.5 h-3.5 mr-1.5 ${isCapturing ? 'animate-spin' : ''}`} />截图
-          <kbd className="ml-1.5 rounded border border-white/20 px-1 text-[9px] opacity-70">R</kbd>
-        </Button>
 
         <Button
           size="sm"
           variant="ghost"
           onClick={onToggleLiveMonitor}
-          className={`h-8 px-2.5 text-[11px] ${liveMonitor ? 'text-emerald-300 bg-emerald-400/10' : 'text-slate-500'}`}
+          className={`h-8 px-2.5 text-[10px] ${liveMonitor ? 'ds-status-success' : 'text-[#77776f]'}`}
           title="实时预览"
         >
-          <Radio className={`w-3.5 h-3.5 mr-1 ${liveMonitor ? 'animate-pulse' : ''}`} />{liveMonitor ? '实时' : '预览'}
+          <Radio className={`w-3.5 h-3.5 ${liveMonitor ? 'animate-pulse' : ''}`} />
+          {liveMonitor ? '实时' : '预览'}
         </Button>
 
         <input
@@ -166,8 +158,28 @@ export function Navbar({
             e.target.value = '';
           }}
         />
-        <Button variant="ghost" size="sm" onClick={() => fileInputRef.current?.click()} className="h-8 px-2.5 text-[11px] text-slate-500" title="导入本地截图">
-          <FolderOpen className="w-3.5 h-3.5 mr-1" /><span className="hidden 2xl:inline">导入</span><ImageIcon className="w-3 h-3 ml-1 2xl:hidden" />
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => fileInputRef.current?.click()}
+          className="h-8 px-2.5 text-[10px]"
+          title="导入本地截图"
+        >
+          <FolderOpen className="w-3.5 h-3.5" />
+          <span className="hidden 2xl:inline">导入</span>
+        </Button>
+
+        <Button
+          id="btnTakeScreenshot"
+          size="sm"
+          onClick={onCaptureScreenshot}
+          disabled={isCapturing}
+          className="h-8 px-3 text-[10px]"
+          title="截图（R）"
+        >
+          <Camera className={`w-3.5 h-3.5 ${isCapturing ? 'animate-spin' : ''}`} />
+          截图
+          <kbd className="ml-0.5 rounded border border-white/20 px-1 text-[8px] opacity-70">R</kbd>
         </Button>
       </div>
     </header>
