@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .geometry import PathInterpolator, Point, PointResolver, Rect
@@ -11,6 +12,8 @@ from .timing import Timing
 
 if TYPE_CHECKING:
     import numpy
+
+    from .task import ExecutionContext
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,9 +27,25 @@ class Tick:
 
     runtime: Runtime
     image: numpy.ndarray
+    execution: ExecutionContext | None = None
 
-    def match(self, locator: Locator) -> MatchResult:
-        return self.runtime.match(locator, self.image)
+    @property
+    def context(self) -> ExecutionContext | None:
+        """State for this task execution, fresh for each scheduled run."""
+        return self.execution
+
+    def match(self, locator: Locator, *, label: str | None = None) -> MatchResult:
+        """Recognize on this snapshot; an optional label identifies the debug image."""
+        if label is None:
+            return self.runtime.match(locator, self.image)
+        return self.runtime.match(locator, self.image, label=label)
+
+    def draw(
+        self, *boxes: Rect, label: str = "debug",
+        color: tuple[int, int, int] = (64, 224, 128),
+    ) -> Path | None:
+        """Save this snapshot with boxes; return None when debug is disabled."""
+        return self.runtime.draw(self.image, *boxes, label=label, color=color)
 
     def click(
         self,

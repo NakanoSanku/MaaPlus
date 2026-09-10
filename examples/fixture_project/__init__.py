@@ -1,0 +1,1 @@
+"""Runnable offline MaaPlus example."""

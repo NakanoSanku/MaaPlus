@@ -116,3 +116,8 @@ if result := tick.match(BATTLE_READY):
 ```
 
 Keep business flow outside Locator composition. `FirstOf` and `AllOf` should describe recognition semantics, not task state transitions or action sequences.
+
+Custom recognition is application-owned. Keep the callback and its registration beside the
+example's bootstrap code, then pass a native `JCustomRecognition` locator to `Tick.match()`.
+See [the complete example](../examples/complete_project/CUSTOM_RECOGNITION.md) for the full
+multi-point color implementation.

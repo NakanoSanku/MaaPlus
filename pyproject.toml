@@ -1,9 +1,35 @@
 [project]
 name = "maaplus"
-version = "0.1.0"
+version = "1.4.0"
 description = "A code-first lightweight enhancement layer for MaaFramework"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.10"
 dependencies = [
-    "maafw>=5.12.3",
+    "maafw>=5.13.0",
+]
+
+[project.optional-dependencies]
+debug = ["pillow>=12.3.0"]
+dev = ["pillow>=12.3.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.urls]
+Homepage = "https://github.com/NakanoSanku/MaaPlus"
+Repository = "https://github.com/NakanoSanku/MaaPlus"
+Issues = "https://github.com/NakanoSanku/MaaPlus/issues"
+
+[project.scripts]
+maaplus = "maaplus.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "examples/complete_project/tests"]
+addopts = "-ra"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pillow>=12.3.0",
 ]

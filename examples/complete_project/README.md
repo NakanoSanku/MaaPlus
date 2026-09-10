@@ -8,8 +8,9 @@ The scenario is intentionally game-like:
 - battle UI is private to `ExploreHandler`, so it returns `CONTINUE` while fighting.
 - a stable explore screen is a handoff-safe point, so it returns `YIELD`.
 - `draw` is a higher-priority recurring task.
-- `App` restores `Scene.DRAW` before `DrawHandler` runs.
+- `App` restores `Scene.DRAW` before `DrawHandler` runs and again when a suspended task resumes.
 - when drawing finishes, the suspended explore task resumes and `App` restores `Scene.EXPLORE` before calling `ExploreHandler` again.
+- after a task reaches its target scene, its handler owns that scene until it yields; Navigator does not need to recognize every private battle or result state.
 - `bootstrap.py` configures randomized point selection, press duration, UI settle delays, action spacing, and path interpolation once for the whole application.
 
 ## Structure
@@ -18,9 +19,11 @@ The scenario is intentionally game-like:
 complete_project/
 ├── main.py
 ├── README.md
+├── CUSTOM_RECOGNITION.md
 ├── demo/
 │   ├── __init__.py
 │   ├── bootstrap.py
+│   ├── custom_recognition.py
 │   ├── tasks.py
 │   ├── ui/
 │   │   ├── __init__.py
@@ -36,8 +39,10 @@ complete_project/
 │       ├── __init__.py
 │       ├── explore.py
 │       └── draw.py
-└── resource/
-    └── README.md
+├── resource/
+│   └── README.md
+└── tests/
+    └── test_custom_recognition.py
 ```
 
 The layering is deliberate:
@@ -63,6 +68,8 @@ MaaPlus / MaaFramework
 - `handlers/` owns business decisions and task-local state.
 - `tasks.py` owns task registration, priorities, and trigger policy.
 - `bootstrap.py` owns MaaFramework, `InteractionConfig`, and App construction.
+- `bootstrap.py` also enables opt-in bounding-box snapshots under `.debug/`.
+- `custom_recognition.py` owns custom recognition algorithms and their registration names.
 - `main.py` only starts the application.
 
 A task handler is simply a callable with the standard MaaPlus signature:
@@ -102,12 +109,65 @@ Normal handlers still just call `result.click()` or `tick.swipe(...)`. A particu
 
 Keep interaction delays short. Multi-second waits for loading, network responses, or battle state changes belong in task-handler state recognition rather than long sleeps, so the scheduler can keep reaching explicit `YIELD` safe points.
 
+## Debug snapshots
+
+The example enables `Debug` in `demo/bootstrap.py` and keeps the newest 200 annotated screenshots
+under `.debug/`. Every `tick.match()` records its ROI and result box; `result.debug_path` can be
+printed when investigating a specific branch. A handler can mark a one-off area with
+`tick.draw((x, y, width, height), label="...")`.
+
+Install the optional image dependency before running the example:
+
+```bash
+uv sync --extra debug
+```
+
+## Custom multi-point color recognition
+
+The example registers a pure NumPy recognizer while loading the MaaFramework `Resource`:
+
+```python
+resource.register_custom_recognition(
+    "MultiPointColor",
+    MultiPointColorRecognition(
+        points=(
+            ColorPoint((0, 0), (255, 214, 80)),
+            ColorPoint((12, 0), (255, 214, 80)),
+            ColorPoint((0, 12), (255, 214, 80)),
+        ),
+        tolerance=12,
+    ),
+)
+```
+
+The UI definition refers to that registration by name:
+
+```python
+from maa.pipeline import JCustomRecognition
+
+BATTLE = JCustomRecognition(
+    custom_recognition="MultiPointColor",
+    roi=(0, 0, 0, 0),
+    custom_recognition_param={"tolerance": 18},
+)
+```
+
+`ColorPoint` values are RGB. MaaFramework supplies screenshots as BGR, and the example performs the
+conversion inside the recognizer. The first point is the anchor; all points must match within the
+configured per-channel tolerance. A successful result returns a bounding box, so existing
+`tick.match(...).click()` code works unchanged.
+
+For a different custom algorithm, inherit `maa.custom_recognition.CustomRecognition`, implement
+`analyze(context, argv)`, return `CustomRecognition.AnalyzeResult(box=..., detail=...)`, and pass
+the instance to `resource.register_custom_recognition()`. The callback receives `argv.image`,
+`argv.roi`, and the JSON string supplied by `custom_recognition_param`.
+
 ## Run
 
 The recognition resources in this example are placeholders. Add templates matching the paths listed in `resource/README.md`, then run from the repository root:
 
 ```bash
-python examples/complete_project/main.py
+uv run --extra debug python examples/complete_project/main.py
 ```
 
 For development, change the draw trigger in `demo/tasks.py` from hourly recurrence to something like:

@@ -1,3 +1,5 @@
+from maa.pipeline import JCustomRecognition
+
 from maaplus import OCR, Template
 
 
@@ -12,9 +14,10 @@ class ExploreUI:
         threshold=[0.82],
     )
 
-    BATTLE = Template(
-        template=["battle/auto.png"],
-        threshold=[0.85],
+    BATTLE = JCustomRecognition(
+        custom_recognition="MultiPointColor",
+        roi=(0, 0, 0, 0),
+        custom_recognition_param={"tolerance": 18},
     )
 
     BATTLE_RESULT = OCR(

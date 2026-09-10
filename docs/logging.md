@@ -11,12 +11,13 @@ maaplus.routing
 maaplus.runtime
 maaplus.runtime.recognition
 maaplus.runtime.controller
+maaplus.debug
 ```
 
 The intended levels are:
 
 - `INFO` — scheduler lifecycle, triggers, task start/completion, preemption/resume, tasker stop.
-- `DEBUG` — task-handler result and duration, screenshot duration, recognition details, resolved interaction timing and gestures, routing state, task registration and coalescing.
+- `DEBUG` — task-handler result and duration, screenshot duration, recognition details, resolved interaction timing and gestures, routing state, task registration and coalescing, and saved debug image paths.
 - `ERROR` — recognition/controller failures, invalid handler results, and task execution failures.
 
 ## Application configuration

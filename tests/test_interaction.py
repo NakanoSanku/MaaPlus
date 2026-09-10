@@ -52,6 +52,10 @@ class BindTasker:
         return True
 
 
+class UninitializedTasker(BindTasker):
+    inited = False
+
+
 class TimingTests(unittest.TestCase):
     def test_random_timing_stays_inside_inclusive_range(self) -> None:
         resolver = timing.random(40, 90)
@@ -273,6 +277,13 @@ class RuntimeInteractionTests(unittest.TestCase):
         self.assertIs(app.scheduler.runtime.interaction, interaction)
         self.assertEqual(tasker.bound, (resource, controller))
 
+    def test_app_factory_rejects_uninitialized_tasker(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "not initialized"):
+            App.from_maa(
+                tasker=UninitializedTasker(),
+                controller=FakeController(),
+                resource=object(),
+            )
 
 class PathStrategyTests(unittest.TestCase):
     def test_linear_interpolation_resamples_path(self) -> None:

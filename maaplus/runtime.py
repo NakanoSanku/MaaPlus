@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import logging
 import time
+import hashlib
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, cast
 
+from .debug import Debug
 from .geometry import PathInterpolator, Point, PointResolver, Rect
 from .interaction import InteractionConfig
 from .locator import Locator, recognition_type
@@ -27,6 +30,7 @@ class MatchResult:
 
     detail: RecognitionDetail
     _click_area: Callable[..., bool] | None = field(default=None, repr=False)
+    debug_path: Path | None = None
 
     @property
     def hit(self) -> bool:
@@ -69,7 +73,10 @@ class MatchResult:
 class Runtime:
     """Synchronous MaaFramework facade with configurable interaction behavior."""
 
-    __slots__ = ("tasker", "controller", "resource", "interaction", "_last_input_end")
+    __slots__ = (
+        "tasker", "controller", "resource", "interaction", "debug", "trace", "_last_input_end",
+        "_closed",
+    )
 
     def __init__(
         self,
@@ -78,12 +85,17 @@ class Runtime:
         controller: Any,
         resource: Any | None = None,
         interaction: InteractionConfig | None = None,
+        debug: Debug | None = None,
+        trace: Any | None = None,
     ) -> None:
         self.tasker = tasker
         self.controller = controller
         self.resource = resource
         self.interaction = interaction or InteractionConfig()
+        self.debug = debug
+        self.trace = trace
         self._last_input_end: float | None = None
+        self._closed = False
 
     def screenshot(self) -> numpy.ndarray:
         """Capture a fresh screenshot."""
@@ -98,7 +110,9 @@ class Runtime:
         logger.debug("screenshot captured elapsed_ms=%.1f", elapsed_ms)
         return image
 
-    def match(self, locator: Locator, image: numpy.ndarray) -> MatchResult:
+    def match(
+        self, locator: Locator, image: numpy.ndarray, *, label: str | None = None
+    ) -> MatchResult:
         """Run a MaaFramework recognition parameter against the supplied screenshot."""
         reco_type = recognition_type(locator)
         type_name = getattr(reco_type, "name", str(reco_type))
@@ -145,7 +159,41 @@ class Runtime:
             result.box,
             elapsed_ms,
         )
+        if self.debug is not None:
+            result.debug_path = self.debug._match(
+                image, locator, result,
+                label if label is not None else getattr(locator, "custom_recognition", type_name),
+            )
+        self._trace(
+            "recognition",
+            type=type_name,
+            locator=locator,
+            hit=result.hit,
+            box=result.box,
+            debug_path=result.debug_path,
+            image_sha256=(
+                hashlib.sha256(image.tobytes()).hexdigest() if self.trace is not None else None
+            ),
+            elapsed_ms=round(elapsed_ms, 3),
+        )
         return result
+
+    def _trace(self, event: str, **fields: Any) -> None:
+        if self.trace is None:
+            return
+        try:
+            self.trace.write(event, **fields)
+        except Exception:
+            logger.warning("trace write failed event=%s", event, exc_info=True)
+
+    def draw(
+        self, image: numpy.ndarray, *boxes: Rect, label: str = "debug",
+        color: tuple[int, int, int] = (64, 224, 128),
+    ) -> Path | None:
+        """Draw on a copy of an existing screenshot, or do nothing when debug is disabled."""
+        if self.debug is None:
+            return None
+        return self.debug.draw(image, *boxes, label=label, color=color)
 
     def click_area(
         self,
@@ -220,6 +268,14 @@ class Runtime:
 
         self._last_input_end = time.monotonic()
         self._sleep(post_delay_ms)
+        self._trace(
+            "controller.action",
+            action="click",
+            point=point,
+            duration_ms=duration_ms,
+            pre_delay_ms=pre_delay_ms,
+            post_delay_ms=post_delay_ms,
+        )
         return True
 
     def swipe(
@@ -281,6 +337,14 @@ class Runtime:
 
         self._last_input_end = time.monotonic()
         self._sleep(post_delay_ms)
+        self._trace(
+            "controller.action",
+            action="swipe",
+            points=resolved_path,
+            duration_ms=duration_ms,
+            pre_delay_ms=pre_delay_ms,
+            post_delay_ms=post_delay_ms,
+        )
         return True
 
     def _wait_action_interval(self) -> None:
@@ -326,6 +390,8 @@ class Runtime:
             raise RuntimeError("MaaFramework touch up failed")
 
     def stop(self) -> None:
+        if self._closed:
+            return
         if not getattr(self.tasker, "running", False):
             return
         logger.info("tasker stop requested")
@@ -334,3 +400,27 @@ class Runtime:
             logger.error("tasker stop failed")
             raise RuntimeError("MaaFramework tasker stop failed")
         logger.info("tasker stopped")
+
+    def close(self) -> None:
+        """Stop the tasker and close optional wrapped resources when they provide a close hook."""
+        if self._closed:
+            return
+        errors: list[BaseException] = []
+        try:
+            self.stop()
+        except BaseException as exc:
+            errors.append(exc)
+        seen: set[int] = set()
+        for resource in (self.tasker, self.controller, self.resource):
+            if resource is None or id(resource) in seen:
+                continue
+            seen.add(id(resource))
+            close = getattr(resource, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except BaseException as exc:
+                    errors.append(exc)
+        self._closed = True
+        if errors:
+            raise errors[0]

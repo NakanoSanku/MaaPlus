@@ -83,6 +83,28 @@ class AppTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "context requires"):
             app.task("routed", lambda tick: DONE, context="draw")
 
+    def test_routed_task_skips_navigation_while_it_owns_context(self) -> None:
+        runtime = FakeRuntime()
+        navigator = FakeNavigator("explore")
+        app = App(Scheduler(runtime), navigator=navigator)
+        calls = 0
+
+        def handler(tick):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                # The task owns internal screens after activation; Navigator
+                # must not pull it back to the public scene on the next tick.
+                navigator.current = "battle"
+            return CONTINUE if calls == 1 else DONE
+
+        app.task("explore", handler, context="explore").submit()
+        app.run()
+
+        self.assertEqual(calls, 2)
+        self.assertEqual(len(navigator.images), 1)
+        self.assertEqual(navigator.transitions, [])
+
     def test_task_handle_every_delegates_to_scheduler(self) -> None:
         runtime = FakeRuntime()
         app = App(Scheduler(runtime))
@@ -100,6 +122,45 @@ class AppTests(unittest.TestCase):
 
         self.assertEqual(ticks, 2)
         self.assertTrue(runtime.stopped)
+
+    def test_task_handle_cancel_stops_a_recurring_task(self) -> None:
+        runtime = FakeRuntime()
+        app = App.from_runtime(runtime)
+        calls = 0
+        handle = None
+
+        def handler(tick: Tick):
+            nonlocal calls
+            calls += 1
+            assert handle is not None
+            handle.cancel()
+            return YIELD
+
+        handle = app.task("periodic", handler).every(1)
+        app.run()
+
+        self.assertEqual(calls, 1)
+        self.assertFalse(app.running)
+
+    def test_task_handle_cancel_removes_future_trigger(self) -> None:
+        runtime = FakeRuntime()
+        app = App.from_runtime(runtime)
+        handle = app.task("future", lambda tick: DONE).after(100)
+
+        self.assertTrue(handle.cancel())
+        app.run()
+        self.assertEqual(runtime.frames, 0)
+
+    def test_task_rejects_invalid_identity(self) -> None:
+        with self.assertRaises(ValueError):
+            from maaplus import Task
+
+            Task("", lambda tick: DONE)
+
+        with self.assertRaises(TypeError):
+            from maaplus import Task
+
+            Task("invalid", lambda tick: DONE, priority=True)
 
     def test_preempting_task_routes_and_suspended_task_restores_context(self) -> None:
         runtime = FakeRuntime()

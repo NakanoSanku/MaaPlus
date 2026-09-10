@@ -10,11 +10,14 @@ home/explore.png
 home/draw.png
 explore/marker.png
 explore/monster.png
-battle/auto.png
 draw/marker.png
 draw/result_close.png
 ```
 
 OCR locators for battle result, confirmation, and free draw do not require template files in this example.
+
+The battle marker is recognized by the registered `MultiPointColor` custom recognizer, so
+`battle/auto.png` is intentionally not required. `demo/custom_recognition.py` contains the sample
+RGB points; replace them with pixels that are stable in the target game.
 
 This directory is only intended to document the expected MaaFramework resource bundle shape. Replace the placeholder names and recognition parameters with values appropriate for the target application.

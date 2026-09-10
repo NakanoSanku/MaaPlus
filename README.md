@@ -26,10 +26,41 @@ The lower-level `Runtime` and `Scheduler` APIs remain available when direct cont
 
 ## Installation
 
-This repository currently targets Python 3.14+ and MaaFramework 5.12.3+.
+MaaPlus 1.4 targets Python 3.10+ and MaaFramework 5.13.0+.
 
 ```bash
+uv sync --dev
+```
+
+For the offline inspection workflow and project scaffold:
+
+```bash
+uv add "maaplus[dev]"
+```
+
+For a runnable offline first project:
+
+```bash
+maaplus init my-game
+cd my-game
 uv sync
+uv run python main.py
+maaplus doctor
+```
+
+Put a screenshot in `fixtures/` before running the generated offline example. Live device setup is
+kept in `bootstrap.py` and is not required for the first recognition result.
+
+After a run, summarize an evidence session with:
+
+```bash
+maaplus trace .maaplus/runs/<run-id>
+```
+
+To build a wheel and source archive:
+
+```bash
+uv build
 ```
 
 ## Quick start
@@ -88,6 +119,76 @@ with App.from_maa(
 
 That is enough for a basic MaaPlus application.
 
+## Multiple device instances
+
+Use `InstanceManager` when the same application should run independently on more than one device.
+The factory receives the device identifier and must create fresh MaaFramework objects, navigators,
+guards, traces, and debug writers for each instance:
+
+```python
+from maaplus import InstanceManager
+
+
+def build_app(config):
+    return create_app(
+        serial=config.device,
+        debug_dir=config.debug_dir,
+        configure_global_options=False,
+    )
+
+
+with InstanceManager(build_app, max_workers=2) as fleet:
+    # Configure MaaFramework's process-wide options once before creating the fleet.
+    fleet.create("phone-a", "emulator-5554")
+    fleet.create("phone-b", "emulator-5556")
+    for name in ("phone-a", "phone-b"):
+        fleet.get(name).task("daily", daily_handler).submit()
+    futures = fleet.start_all(interval=100)
+    for future in futures.values():
+        future.result()
+```
+
+The manager rejects duplicate instance names and device identifiers, keeps per-instance artifact
+directories, and exposes lifecycle state and health through `fleet.instances` or
+`fleet.snapshot(name)` (`health`, `failed_tasks`, and `current_task`). It uses a bounded thread
+executor in the current release. See the [multiple device guide](docs/instances.md) for the factory
+contract and isolation rules.
+
+## Bounding-box debugging
+
+Debug images are opt-in. Install the small image extra and pass a `Debug` sink while creating the
+application:
+
+```bash
+uv add "maaplus[debug]"
+```
+
+```python
+from maaplus import App, Debug
+
+app = App.from_maa(
+    tasker=tasker,
+    controller=controller,
+    resource=resource,
+    debug=Debug(".debug", max_images=200),
+)
+```
+
+Every `tick.match()` then writes a PNG containing the original screenshot, the static recognition
+ROI, and the returned hit box. `MatchResult.debug_path` points to that file. Green means a hit,
+blue means the search ROI, and red means a miss. The original screenshot coordinates stay unchanged;
+the caption is appended below the image. For an ad-hoc probe, draw any areas without another
+recognition call:
+
+```python
+path = tick.draw((100, 200, 80, 40), label="battle probe")
+```
+
+The PNG also stores the full coordinates and label as `maaplus` metadata. Draw failures are logged
+and do not stop a recognition tick; explicit `tick.draw()` validation errors are raised.
+
+See the [bounding-box debugging guide](docs/debugging.md) for retention, ROI, and output details.
+
 ## Task and TaskHandler
 
 A `Task` is only a schedulable identity:
@@ -137,7 +238,32 @@ class ExploreHandler:
         return YIELD
 ```
 
-The same handler object survives multiple ticks and scheduler preemption, so ordinary Python fields are enough for task-local business progress.
+The same handler object survives multiple ticks and scheduler preemption. Use `tick.context.state`
+for state that must reset at the start of each scheduled execution.
+
+Scheduled executions now expose a fresh `tick.context` with a mutable `state` dictionary and attempt
+number. Periodic runs do not reuse the previous execution context:
+
+```python
+def collect(tick):
+    state = tick.context.state
+    state["seen"] = state.get("seen", 0) + 1
+    return DONE if state["seen"] >= 3 else CONTINUE
+
+app.task("collect", collect, timeout=60_000, retries=2, retry_delay=500)
+```
+
+Timeouts and retries are measured in milliseconds. A task failure is isolated from unrelated ready
+tasks; after retries are exhausted, `handle.failure` contains the exception and attempt count.
+`handle.status` exposes the current lifecycle and `handle.last_execution` exposes the most recent
+terminal summary. A failed task can be restarted with `handle.resume()`.
+
+Periodic tasks pause after a terminal failure by default. Opt into continued periodic attempts only
+when the task is safe to repeat:
+
+```python
+app.task("heartbeat", heartbeat, continue_recurring=True).every(60_000)
+```
 
 ## Tick
 
@@ -255,6 +381,16 @@ You can also schedule a wall-clock datetime:
 draw.at(target_datetime)
 ```
 
+Cancel a one-shot or recurring handle when it is no longer needed:
+
+```python
+draw.every(3_600_000)
+draw.cancel()
+```
+
+Cancellation is cooperative. If the handler is already running, its current tick finishes and
+the scheduler discards the task before taking another screenshot.
+
 Higher numeric priority wins, but a high-priority task cannot interrupt an unfinished current task until that task returns `YIELD`.
 
 The same `Task` object has at most one active execution plus one pending execution request. Repeated triggers coalesce instead of building an unbounded backlog.
@@ -340,7 +476,12 @@ draw.every(3_600_000)
 app.run(interval=100)
 ```
 
-`App` automatically wraps the handler with context restoration.
+`App` automatically wraps the handler with context restoration. Routing runs when an execution first
+becomes active. After the navigator returns `READY`, later ticks call the task handler directly so
+the handler can own private substates such as battles and result dialogs. If a higher-priority task
+preempts it, the scheduler invalidates the route; the navigator runs again before the suspended
+handler resumes. Pausing the scheduler does not invalidate the route because no other task can take
+over the UI.
 
 A preemption can therefore look like:
 
@@ -372,7 +513,9 @@ Navigator: DRAW -> ... -> EXPLORE
 original ExploreHandler continues
 ```
 
-The suspended handler object keeps its Python state. The navigator restores the external UI context before that handler is called again.
+The suspended handler object keeps its Python state. The navigator restores the external UI context
+before that handler is called again after preemption. The navigator does not need to recognize every
+internal state owned by the handler.
 
 A safe handoff point does not have to be one universal home screen. It only needs to be a state from which the navigator can safely take control.
 
@@ -385,7 +528,7 @@ Business progress
     -> TaskHandler object
 
 Current UI scene
-    -> current Tick screenshot + Navigator recognition
+    -> Navigator recognition when a task activates or resumes; handler-owned state between activations
 
 Safe handoff permission
     -> TaskResult.YIELD / DONE
@@ -506,7 +649,42 @@ handler = routed(
 task = Task("draw", handler, priority=100)
 ```
 
-Normal `App.task(..., context=...)` usage performs this wiring automatically.
+Normal `App.task(..., context=...)` usage performs this wiring automatically. The route is checked on
+activation and after preemption, then skipped while the task retains UI ownership.
+
+Navigation can return `NavigationState.READY`, `WAITING`, or `FAILED`. Routed tasks enforce a
+navigation step limit and timeout, so a loading or unknown screen cannot silently hold higher-
+priority work forever.
+
+`App.task(..., context=...)` accepts `navigation_max_steps`, `navigation_timeout`, and
+`yield_on_wait`. Waiting keeps UI ownership by default; `yield_on_wait=True` explicitly permits a
+safe navigation task to yield while its context is loading.
+
+## Global guards
+
+Use a global guard for UI conditions that may appear over any task, such as notification dialogs or
+connection prompts. Guards run after one screenshot is captured and before context routing or the
+task handler, so they can handle a popup even while the current task returns `CONTINUE`:
+
+```python
+from maaplus import GuardResult, OCR, Tick
+
+
+def notice_guard(tick: Tick):
+    if notice := tick.match(OCR(expected=["知道了", "关闭"])):
+        notice.click()
+        return GuardResult.HANDLED
+    return GuardResult.IGNORE
+
+
+app.guard("notice", notice_guard, priority=100)
+```
+
+`HANDLED` skips the current task handler and takes a fresh screenshot on the next tick. Return
+`INVALIDATE` when recovery changes the scene and routing must run again. Return `ABORT` for a fatal
+condition. Guards run in descending priority order and stop after the first non-`IGNORE` result. A
+guard that handles too many consecutive ticks raises `GuardLoopError` by default; configure
+`max_consecutive=None` only when repeated handling is intentional. See the [global guard guide](docs/guards.md).
 
 ## Architecture
 
@@ -539,9 +717,15 @@ The core rule remains: remove application boilerplate without rebuilding MaaFram
 
 - `examples/basic_adb.py` — minimal first-contact example.
 - `examples/complete_project/` — recommended multi-task project structure with navigation, preemption, and recurring work.
+- [Custom recognition example](examples/complete_project/CUSTOM_RECOGNITION.md) — an application-owned multi-point color recognizer using MaaFramework's native interfaces.
+- [Development workflow](docs/development.md) — fixture inspection, controller adapters, traces, and project scaffolding.
+- [Global guards](docs/guards.md) — cross-task popup and exceptional UI handling.
+- [Offline example](examples/fixture_project/README.md) — recognition, assertions, task state, and trace without a device.
 
 ## Tests
 
 ```bash
-python -m unittest discover -s tests -v
+uv run pytest
 ```
+
+See [CHANGELOG.md](CHANGELOG.md) for the release history.
