@@ -1,41 +1,69 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0b0d12;
-  --foreground: #e7e9ee;
-  --card: #10131a;
-  --card-hover: #151922;
-  --border: rgba(255, 255, 255, 0.08);
-  --border-focus: #8b5cf6;
-  --muted: #181c25;
-  --muted-foreground: #8b93a3;
-  --primary: #8b5cf6;
-  --primary-hover: #a78bfa;
+  --background: #f3f3f0;
+  --foreground: #191918;
+  --card: #ffffff;
+  --card-hover: #f8f8f6;
+  --border: #e6e6e2;
+  --border-focus: #bdbdb7;
+  --muted: #f4f4f1;
+  --muted-foreground: #77776f;
+  --primary: #1b1b1a;
+  --primary-hover: #30302e;
   --primary-foreground: #ffffff;
-  --accent: #a78bfa;
-  --success: #34d399;
-  --warning: #fbbf24;
-  --destructive: #fb7185;
-  --radius: 0.625rem;
+  --accent: #1b1b1a;
+  --success: #2f9e67;
+  --warning: #b9872d;
+  --destructive: #d85c5c;
+  --radius: 0.75rem;
 
-  /* Remap legacy canvas utilities into the v2 visual system without
-     destabilizing the mature canvas/ROI interaction code. */
-  --color-slate-950: #090b10;
-  --color-slate-900: #10131a;
-  --color-slate-800: #1a1f29;
-  --color-slate-700: #2a313d;
-  --color-slate-600: #505968;
-  --color-slate-500: #747e8f;
-  --color-slate-400: #9aa3b2;
-  --color-slate-300: #c1c7d1;
-  --color-slate-200: #dde1e7;
-  --color-slate-100: #f3f4f6;
-  --color-sky-950: #21143a;
-  --color-sky-600: #7c3aed;
-  --color-sky-500: #8b5cf6;
-  --color-sky-400: #a78bfa;
-  --color-sky-300: #c4b5fd;
-  --color-sky-200: #ddd6fe;
+  /* The existing canvas/inspector surfaces use Tailwind's slate scale heavily.
+     Invert that semantic scale so mature dark-theme components become light
+     surfaces without touching their interaction code. */
+  --color-slate-950: #ffffff;
+  --color-slate-900: #fafaf8;
+  --color-slate-800: #e7e7e3;
+  --color-slate-700: #d5d5d0;
+  --color-slate-600: #a3a39c;
+  --color-slate-500: #7d7d76;
+  --color-slate-400: #62625c;
+  --color-slate-300: #454541;
+  --color-slate-200: #30302e;
+  --color-slate-100: #1d1d1b;
+
+  /* MaaPlus uses a monochrome primary action, matching the reference system. */
+  --color-sky-950: #eeeeeb;
+  --color-sky-600: #1b1b1a;
+  --color-sky-500: #292927;
+  --color-sky-400: #3c3c39;
+  --color-sky-300: #55554f;
+  --color-sky-200: #6d6d66;
+
+  --color-violet-950: #eeeeeb;
+  --color-violet-600: #1b1b1a;
+  --color-violet-500: #292927;
+  --color-violet-400: #3c3c39;
+  --color-violet-300: #55554f;
+  --color-violet-200: #6d6d66;
+
+  --color-emerald-950: #eff8f2;
+  --color-emerald-600: #278a59;
+  --color-emerald-500: #2f9e67;
+  --color-emerald-400: #3cad75;
+  --color-emerald-300: #277a51;
+
+  --color-rose-950: #fff4f3;
+  --color-rose-600: #c94f4f;
+  --color-rose-500: #d85c5c;
+  --color-rose-400: #dc6a6a;
+  --color-rose-300: #a94848;
+
+  --color-amber-950: #fff8e9;
+  --color-amber-600: #a77724;
+  --color-amber-500: #b9872d;
+  --color-amber-400: #c5963f;
+  --color-amber-300: #8d6823;
 }
 
 * {
@@ -49,16 +77,11 @@ body,
   padding: 0;
   height: 100vh;
   width: 100vw;
-  background: #0b0d12;
-  color: #e7e9ee;
   overflow: hidden;
+  background: #efefec;
+  color: #191918;
   font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
-
-body {
-  background-image:
-    radial-gradient(circle at 15% -20%, rgba(139, 92, 246, 0.08), transparent 32rem),
-    radial-gradient(circle at 92% 10%, rgba(52, 211, 153, 0.035), transparent 26rem);
+  -webkit-font-smoothing: antialiased;
 }
 
 button,
@@ -72,12 +95,12 @@ button:focus-visible,
 select:focus-visible,
 input:focus-visible,
 textarea:focus-visible {
-  outline: 2px solid rgba(167, 139, 250, 0.55);
-  outline-offset: 1px;
+  outline: 2px solid rgba(25, 25, 24, 0.18);
+  outline-offset: 2px;
 }
 
 ::selection {
-  background: rgba(139, 92, 246, 0.28);
+  background: rgba(25, 25, 24, 0.12);
 }
 
 ::-webkit-scrollbar {
@@ -90,10 +113,63 @@ textarea:focus-visible {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.2);
+  background: #d1d1cc;
   border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.35);
+  background: #bdbdb7;
+}
+
+.ds-shell {
+  background: #ffffff;
+  border: 1px solid #e1e1dd;
+  border-radius: 18px;
+  box-shadow: 0 18px 55px rgba(30, 30, 28, 0.11), 0 2px 8px rgba(30, 30, 28, 0.05);
+}
+
+.ds-panel {
+  background: #ffffff;
+  border: 1px solid #e6e6e2;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(24, 24, 22, 0.025);
+}
+
+.ds-card {
+  background: #ffffff;
+  border: 1px solid #e8e8e4;
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(24, 24, 22, 0.02);
+}
+
+.ds-subtle {
+  background: #f8f8f6;
+  border: 1px solid #ecece8;
+  border-radius: 9px;
+}
+
+.ds-eyebrow {
+  color: #8a8a83;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.ds-status-success {
+  color: #277a51;
+  background: #edf8f1;
+  border: 1px solid #d7efdf;
+}
+
+.ds-status-warning {
+  color: #8d6823;
+  background: #fff8e9;
+  border: 1px solid #f4e5bd;
+}
+
+.ds-status-danger {
+  color: #a94848;
+  background: #fff2f1;
+  border: 1px solid #f3d7d5;
 }
