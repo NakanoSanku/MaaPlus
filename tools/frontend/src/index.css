@@ -1,50 +1,80 @@
 @import "tailwindcss";
 
 :root {
-  --background: #020617;
-  --foreground: #f8fafc;
-  --card: #0f172a;
-  --card-hover: #1e293b;
-  --border: #334155;
-  --border-focus: #38bdf8;
-  --muted: #1e293b;
-  --muted-foreground: #94a3b8;
-  --primary: #0284c7;
-  --primary-hover: #0369a1;
+  --background: #0b0d12;
+  --foreground: #e7e9ee;
+  --card: #10131a;
+  --card-hover: #151922;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-focus: #8b5cf6;
+  --muted: #181c25;
+  --muted-foreground: #8b93a3;
+  --primary: #8b5cf6;
+  --primary-hover: #a78bfa;
   --primary-foreground: #ffffff;
-  --accent: #38bdf8;
-  --success: #10b981;
-  --warning: #f59e0b;
-  --destructive: #ef4444;
-  --radius: 0.5rem;
+  --accent: #a78bfa;
+  --success: #34d399;
+  --warning: #fbbf24;
+  --destructive: #fb7185;
+  --radius: 0.625rem;
 }
 
 * {
   box-sizing: border-box;
 }
 
-html, body {
+html,
+body,
+#root {
   margin: 0;
   padding: 0;
   height: 100vh;
   width: 100vw;
-  background-color: #020617;
-  color: #f8fafc;
+  background: #0b0d12;
+  color: #e7e9ee;
   overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body {
+  background-image:
+    radial-gradient(circle at 15% -20%, rgba(139, 92, 246, 0.08), transparent 32rem),
+    radial-gradient(circle at 92% 10%, rgba(52, 211, 153, 0.035), transparent 26rem);
+}
+
+button,
+select,
+input,
+textarea {
+  font: inherit;
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid rgba(167, 139, 250, 0.55);
+  outline-offset: 1px;
+}
+
+::selection {
+  background: rgba(139, 92, 246, 0.28);
 }
 
 ::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
-  background: #334155;
-  border-radius: 3px;
+  background: rgba(148, 163, 184, 0.2);
+  border-radius: 999px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: rgba(148, 163, 184, 0.35);
 }
