@@ -22,7 +22,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install Python dependencies
-        run: python -m pip install -e ".[dev]" pytest
+        run: python -m pip install -e ".[dev]" pytest httpx2
 
       - name: Run Workbench backend tests
         shell: bash
