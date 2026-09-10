@@ -12,5 +12,5 @@ rendering chunks...
 [plugin vite:singlefile] Inlining: style-DmX7dype.css
 computing gzip size...
 [2mdist/[22m[32mindex.html  [39m[1m[2m384.28 kB[22m[1m[22m[2m │ gzip: 109.75 kB[22m
-[32m✓ built in 2.54s[39m
+[32m✓ built in 1.46s[39m
 [Workbench] Successfully built single-file bundle: /home/runner/work/MaaPlus/MaaPlus/tools/ui_workbench.html
