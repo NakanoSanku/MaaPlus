@@ -1,15 +1,14 @@
-from maa.pipeline import JCustomRecognition
+from maa.pipeline import JCustomRecognition, JOCR, JTemplateMatch
 
-from maaplus import OCR, Template
 
 
 class ExploreUI:
-    MARKER = Template(
+    MARKER = JTemplateMatch(
         template=["explore/marker.png"],
         threshold=[0.85],
     )
 
-    MONSTER = Template(
+    MONSTER = JTemplateMatch(
         template=["explore/monster.png"],
         threshold=[0.82],
     )
@@ -20,10 +19,10 @@ class ExploreUI:
         custom_recognition_param={"tolerance": 18},
     )
 
-    BATTLE_RESULT = OCR(
+    BATTLE_RESULT = JOCR(
         expected=["胜利", "失败"],
     )
 
-    RESULT_CONFIRM = OCR(
+    RESULT_CONFIRM = JOCR(
         expected=["确定", "继续"],
     )

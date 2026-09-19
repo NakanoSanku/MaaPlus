@@ -6,11 +6,12 @@ before context routing or the task handler. A guard and the task therefore inspe
 image.
 
 ```python
-from maaplus import App, GuardResult, OCR, Tick
+from maa.pipeline import JOCR
+from maaplus import App, GuardResult, Tick
 
 
 def notice_guard(tick: Tick):
-    if notice := tick.match(OCR(expected=["知道了", "关闭"])):
+    if notice := tick.match(JOCR(expected=["知道了", "关闭"])):
         notice.click()
         return GuardResult.HANDLED
     return GuardResult.IGNORE
@@ -56,6 +57,6 @@ can appear while the application is otherwise waiting; stop the app or its insta
 the watcher should end.
 
 Register guards at application setup or pass them through `App.from_maa(..., guards=[...])` and
-`App.from_runtime(..., guards=[...])`. Use cheap Template or Color locators for frequent guards and
+`App.from_runtime(..., guards=[...])`. Use cheap `JTemplateMatch` or `JColorMatch` locators for frequent guards and
 reserve OCR for conditions that need it. Guards run only when the scheduler has an active tick; an
 idle scheduler does not capture screenshots for monitoring.

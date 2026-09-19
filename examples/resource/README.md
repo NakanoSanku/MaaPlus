@@ -14,7 +14,9 @@ examples/resource/
 The locator then refers to it as:
 
 ```python
-Template("login/start.png", threshold=0.85)
+from maa.pipeline import JTemplateMatch
+
+JTemplateMatch(template=["login/start.png"], threshold=[0.85])
 ```
 
 Replace the demo OCR text, ROIs, and template with values from the target application before running the example.

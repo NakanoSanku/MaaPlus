@@ -3,7 +3,8 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from maaplus import DONE, YIELD, Runtime, Scheduler, Task, TaskResult, Template, routed
+from maa.pipeline import JTemplateMatch
+from maaplus import DONE, YIELD, Runtime, Scheduler, Task, TaskResult, routed
 
 
 class FakeRuntime:
@@ -117,7 +118,7 @@ class RuntimeLoggingTests(unittest.TestCase):
             tasker=FakeTasker(recognition),
             controller=FakeController(),
         )
-        locator = Template(template=["button.png"])
+        locator = JTemplateMatch(template=["button.png"])
 
         with self.assertLogs("maaplus.runtime.recognition", level="DEBUG") as captured:
             result = runtime.match(locator, object())

@@ -68,6 +68,8 @@ MaaPlus / MaaFramework
 - `handlers/` owns business decisions and task-local state.
 - `tasks.py` owns task registration, priorities, and trigger policy.
 - `bootstrap.py` owns MaaFramework, `InteractionConfig`, and App construction.
+- It discovers devices with `Toolkit.find_adb_devices()`, creates a native `AdbController`, checks
+  connection success, and passes the connected controller to `App.from_maa()`.
 - `bootstrap.py` also enables opt-in bounding-box snapshots under `.debug/`.
 - `custom_recognition.py` owns custom recognition algorithms and their registration names.
 - `main.py` only starts the application.
@@ -169,6 +171,11 @@ The recognition resources in this example are placeholders. Add templates matchi
 ```bash
 uv run --extra debug python examples/complete_project/main.py
 ```
+
+The default startup requires exactly one discovered ADB device. With multiple devices, pass the
+desired address to `create_app(serial="emulator-5554")` in `main.py`. An address that is not
+discovered raises a setup error. Device selection and controller settings belong in
+`demo/bootstrap.py`, using MaaFramework's native APIs.
 
 For development, change the draw trigger in `demo/tasks.py` from hourly recurrence to something like:
 

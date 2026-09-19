@@ -14,7 +14,8 @@ try:
 except ImportError:  # Optional ``maaplus[debug]`` dependency is absent.
     Image = None  # type: ignore[assignment]
 
-from maaplus import Debug, Runtime, Template, Tick
+from maa.pipeline import JTemplateMatch
+from maaplus import Debug, Runtime, Tick
 from maaplus.debug import _static_roi
 
 
@@ -56,7 +57,7 @@ class DebugTests(unittest.TestCase):
             runtime = Runtime(
                 tasker=tasker, controller=object(), debug=Debug(directory)
             )
-            result = runtime.match(Template(template=["button.png"]), image)
+            result = runtime.match(JTemplateMatch(template=["button.png"]), image)
             self.assertTrue(result.hit)
             self.assertIsNotNone(result.debug_path)
             self.assertTrue(result.debug_path.is_file())
@@ -73,7 +74,7 @@ class DebugTests(unittest.TestCase):
         trace = Mock()
         with tempfile.TemporaryDirectory() as directory:
             runtime = Runtime(tasker=tasker, controller=object(), debug=Debug(directory), trace=trace)
-            result = runtime.match(Template(template=["button.png"]), image)
+            result = runtime.match(JTemplateMatch(template=["button.png"]), image)
 
         event_name = trace.write.call_args.args[0]
         event = trace.write.call_args.kwargs
@@ -82,9 +83,9 @@ class DebugTests(unittest.TestCase):
         self.assertTrue(event["image_sha256"])
 
     def test_static_roi_follows_maa_zero_negative_and_offset_rules(self) -> None:
-        self.assertEqual(_static_roi(Template(template=[], roi=(10, 20, 0, 0)), 100, 80), (10, 20, 90, 60))
-        self.assertEqual(_static_roi(Template(template=[], roi=(-10, -20, -30, -40)), 100, 80), (60, 20, 30, 40))
-        self.assertEqual(_static_roi(Template(template=[], roi=(10, 20, 30, 40), roi_offset=(2, 3, 4, 5)), 100, 80), (12, 23, 34, 45))
+        self.assertEqual(_static_roi(JTemplateMatch(template=[], roi=(10, 20, 0, 0)), 100, 80), (10, 20, 90, 60))
+        self.assertEqual(_static_roi(JTemplateMatch(template=[], roi=(-10, -20, -30, -40)), 100, 80), (60, 20, 30, 40))
+        self.assertEqual(_static_roi(JTemplateMatch(template=[], roi=(10, 20, 30, 40), roi_offset=(2, 3, 4, 5)), 100, 80), (12, 23, 34, 45))
 
 
 if __name__ == "__main__":

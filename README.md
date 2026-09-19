@@ -4,7 +4,7 @@ MaaPlus is a small code-first application layer on top of [MaaFramework](https:/
 
 For normal application development, start with these concepts:
 
-- `Template` / `OCR` — describe what UI elements look like.
+- `maa.pipeline.JTemplateMatch` / `JOCR` — describe what UI elements look like.
 - `Task` — one schedulable piece of work.
 - `TaskHandler` — the business logic executed for that task.
 - `Tick` — one handler invocation over one fixed screenshot.
@@ -63,21 +63,32 @@ To build a wheel and source archive:
 uv build
 ```
 
+For visual UI authoring, screenshot capture, and native recognition validation, use the separate
+[MaaPlus Studio package](studio/README.md):
+
+```bash
+uv sync --project studio --locked --dev
+uv run --project studio maaplus-studio --project examples/complete_project
+```
+
+Studio manages versioned configuration and generates normal Python UI classes. Its web dependencies
+and release package are independent of MaaPlus.
+
 ## Quick start
 
 Define UI elements with normal MaaFramework recognition parameters:
 
 ```python
-from maaplus import OCR, Template
+from maa.pipeline import JOCR, JTemplateMatch
 
 
 class LoginUI:
-    START = Template(
+    START = JTemplateMatch(
         template=["login/start.png"],
         threshold=[0.85],
     )
-    CLOSE = OCR(expected=["关闭", "跳过"])
-    CONFIRM = OCR(expected=["确认"])
+    CLOSE = JOCR(expected=["关闭", "跳过"])
+    CONFIRM = JOCR(expected=["确认"])
 ```
 
 Write a task handler:
@@ -101,6 +112,12 @@ def login_handler(tick: Tick):
 
     return DONE
 ```
+
+Create and connect the controller with MaaFramework's native API: `AdbController` for Android or
+`Win32Controller` for Windows. The application also creates the `Tasker` and loads the `Resource`.
+`App.from_maa()` binds these prepared objects and adds MaaPlus task scheduling. See
+[`examples/basic_adb.py`](examples/basic_adb.py) for complete ADB initialization and the
+[controller setup guide](docs/development.md#native-controller-setup) for the shared boundary.
 
 Register and run the task:
 
@@ -667,11 +684,12 @@ connection prompts. Guards run after one screenshot is captured and before conte
 task handler, so they can handle a popup even while the current task returns `CONTINUE`:
 
 ```python
-from maaplus import GuardResult, OCR, Tick
+from maa.pipeline import JOCR
+from maaplus import GuardResult, Tick
 
 
 def notice_guard(tick: Tick):
-    if notice := tick.match(OCR(expected=["知道了", "关闭"])):
+    if notice := tick.match(JOCR(expected=["知道了", "关闭"])):
         notice.click()
         return GuardResult.HANDLED
     return GuardResult.IGNORE

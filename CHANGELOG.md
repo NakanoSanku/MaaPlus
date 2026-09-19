@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+- Studio can test every exported locator on a UI page against one fixed screenshot, with progress,
+  per-item results, errors, timings, and selectable match details. Failures do not stop later items;
+  users can stop after the active item. Draft edits and new screenshots invalidate old results.
+- Removed the `Template`, `OCR`, `FirstOf`, and `AllOf` exports. Define recognition with
+  `maa.pipeline.JTemplateMatch`, `JOCR`, `JOr`, and `JAnd` directly. Studio generates only native
+  recognition types, including inline nested combinations. AST import accepts current native
+  definitions only. Examples, project scaffolding, and documentation use the same native API.
+- Studio locators now support separate display names, and template fields provide a searchable
+  multi-select image browser with thumbnails while preserving Python attribute names and resource paths.
+- Added the independent `maaplus-studio` package for local visual UI authoring: ADB/Win32 screenshots,
+  ROI and PNG cropping, native recognition validation, safe AST import, versioned project configuration,
+  and deterministic Python generation with file conflict detection and rollback. The built web UI ships
+  inside the Studio wheel; MaaPlus core does not gain web dependencies.
+- Removed `maaplus.dev.create_adb_controller`, `find_adb_devices`, and `DiscoveredDevice`. Use
+  `maa.controller.AdbController` and `maa.toolkit.Toolkit.find_adb_devices()` directly, matching
+  native Win32 controller setup. Application code owns device selection and connection.
+- Updated ADB examples, instance documentation, and device diagnostics to use native MaaFramework
+  APIs. Example startup reports an undiscovered explicit address instead of using fallback methods.
+
 ## 1.4.0 — 2026-09-09
 
 - Added offline `inspect` and read-only `doctor` CLI commands with fixture assertions.

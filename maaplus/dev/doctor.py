@@ -27,9 +27,9 @@ def run_doctor(*, resource_dir: str | Path | None = None) -> list[DoctorCheck]:
         checks.append(DoctorCheck("resource", path.exists(), str(path)))
 
     try:
-        from .controller import find_adb_devices
+        from maa.toolkit import Toolkit
 
-        devices = find_adb_devices()
+        devices = Toolkit.find_adb_devices()
         if devices:
             detail = "; ".join(
                 f"{device.address} "

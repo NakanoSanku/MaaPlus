@@ -6,7 +6,8 @@ from types import SimpleNamespace
 import numpy
 from PIL import Image
 
-from maaplus import App, CONTINUE, DONE, Runtime, Template
+from maa.pipeline import JTemplateMatch
+from maaplus import App, CONTINUE, DONE, Runtime
 from maaplus.dev import Inspector, TraceSession
 
 
@@ -45,7 +46,7 @@ class FixtureController:
         pass
 
 
-UI_READY = Template(template=["ready.png"])
+UI_READY = JTemplateMatch(template=["ready.png"])
 
 
 def main() -> int:

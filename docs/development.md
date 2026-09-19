@@ -2,6 +2,11 @@
 
 MaaPlus keeps inspection and diagnostics in the optional `maaplus[dev]` layer.
 
+For the visual editor, install the independent [MaaPlus Studio package](../studio/README.md).
+It creates UI classes from screenshots or imports static definitions, validates them through
+`Inspector`, and generates Python from `maaplus-studio.json`. Its frontend, dependencies, lockfiles,
+and wheel are maintained in `studio/` separately from the core library.
+
 ```bash
 uv add "maaplus[dev]"
 ```
@@ -131,56 +136,36 @@ maaplus doctor --resource resource
 ```
 
 The doctor checks MaaFramework, NumPy, optional Pillow, resource existence, discovered ADB devices,
-and their screenshot/input capabilities. It sends no device input. ADB examples accept `serial`
-and require explicit selection when more than one device is available.
+and their screenshot/input capabilities using `maa.toolkit.Toolkit.find_adb_devices()`. It sends
+no device input. ADB examples accept `serial` and require explicit selection when more than one
+device is available.
 
-## Controller adapters and device discovery
+## Native controller setup
 
-`maaplus.dev` provides helpers around MaaFramework's native controllers:
+Application bootstrap code owns live-device discovery, selection, controller construction, and
+connection for both Android and Windows:
 
-- `find_adb_devices() -> list[DiscoveredDevice]`: Queries MaaFramework's native toolkit to discover connected emulators and ADB devices along with their optimal screencap and input methods.
-- `create_adb_controller(serial=None, ...)`: Auto-connects to a discovered device or explicit serial with optimal settings pre-applied.
-- `create_debug_controller`, `create_record_controller`, and `create_replay_controller`: Reuse MaaFramework's native development controllers. Controller replay covers controller operations and screenshots; project business code still owns its other side effects.
+| Target | Discovery from `maa.toolkit` | Controller from `maa.controller` |
+| --- | --- | --- |
+| Android / emulator | `Toolkit.find_adb_devices()` | `AdbController(...)` |
+| Windows window | `Toolkit.find_desktop_windows()` | `Win32Controller(...)` |
 
-## UI Workbench dev tool
+Call `controller.post_connection().wait()` and check `succeeded`, load the resource bundle with
+`resource.post_bundle(...).wait()`, then pass the controller, resource, and tasker to
+`App.from_maa()`. By default, MaaPlus binds the supplied objects to the tasker. Configure
+`Toolkit.init_option(...)` once per process, before building application instances.
 
-MaaPlus provides an interactive, single-HTML developer workbench (`tools/ui_workbench.html`)
-to assist with UI layer creation, locator management, live device/emulator connection, visual
-template cropping, and fixture backtesting.
+The [basic ADB example](../examples/basic_adb.py) and the
+[complete-project bootstrap](../examples/complete_project/demo/bootstrap.py) show this setup using
+native MaaFramework APIs. Their application-level selection accepts a unique discovered device or
+an explicit `serial` matching a discovered address. If discovery needs a particular ADB executable,
+pass it to `Toolkit.find_adb_devices(specified_adb=...)`. Applications with manually configured
+devices can instead pass their ADB path, address, screenshot/input methods, and configuration
+directly to `AdbController`.
 
-### Launching the workbench
+## Development controller adapters
 
-With the local backend bridge (recommended for live device control and MaaFramework recognition):
-
-```bash
-maaplus ui
-# Or with explicit port / host:
-maaplus ui --port 8080 --no-browser
-# Or directly with Python:
-uv run python tools/ui_workbench.py
-```
-
-### Standalone / Offline mode
-
-The workbench is also a self-contained single HTML file (`tools/ui_workbench.html`). You can
-double-click or open it directly in any modern browser (`file:///.../tools/ui_workbench.html`)
-without running the backend:
-- Paste (`Ctrl+V`) or drag-and-drop screenshots.
-- Use interactive Pan & Zoom (wheel / space-drag).
-- Probe pixel coordinates `(X, Y)` and exact color with the 9x9 pixel magnifier loupe.
-- Select region of interest (ROI) and crop template images with one-click download.
-- Manage UI classes and locators (`Template`, `OCR`, `FirstOf`, `AllOf`).
-- Generate idiomatic MaaPlus Python UI definitions.
-
-### Frontend Development & Rebuilding
-
-The UI Workbench frontend is authored with **React 19**, **Tailwind CSS v4**, and **shadcn/ui** design patterns in `tools/frontend/`. It compiles into a single, zero-dependency offline bundle `tools/ui_workbench.html` using `vite-plugin-singlefile`:
-
-```bash
-# In tools/frontend
-pnpm install   # or bun install
-pnpm build     # or bun run build
-```
-
-The build automatically synchronizes and updates `tools/ui_workbench.html`.
-
+`maaplus.dev` provides `create_debug_controller`, `create_record_controller`, and
+`create_replay_controller` around MaaFramework's native development controllers. Controller replay
+covers controller operations and screenshots; project business code still owns its other side
+effects.

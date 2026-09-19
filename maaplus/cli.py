@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -37,11 +36,6 @@ def main(argv: list[str] | None = None) -> int:
     trace = subparsers.add_parser("trace", help="summarize one isolated trace session")
     trace.add_argument("session", type=Path)
 
-    ui = subparsers.add_parser("ui", help="launch interactive UI Workbench in browser")
-    ui.add_argument("--host", default="127.0.0.1", help="host address (default: 127.0.0.1)")
-    ui.add_argument("--port", type=int, default=8080, help="port number (default: 8080)")
-    ui.add_argument("--no-browser", action="store_true", help="do not open browser automatically")
-
     args = parser.parse_args(argv)
     if args.command == "init":
         return _init(Path(args.directory), force=args.force)
@@ -51,8 +45,6 @@ def main(argv: list[str] | None = None) -> int:
         return _doctor(args)
     if args.command == "trace":
         return _trace(args)
-    if args.command == "ui":
-        return _ui(args)
     return 2
 
 
@@ -127,28 +119,6 @@ def _trace(args: argparse.Namespace) -> int:
     return 0
 
 
-def _ui(args: argparse.Namespace) -> int:
-    import importlib.util
-    tools_script = Path(__file__).resolve().parent.parent / "tools" / "ui_workbench.py"
-    if not tools_script.exists():
-        print(f"ui: {tools_script} not found")
-        return 2
-    spec = importlib.util.spec_from_file_location("ui_workbench", tools_script)
-    if spec is None or spec.loader is None:
-        print(f"ui: failed to load module spec for {tools_script}")
-        return 2
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules["ui_workbench"] = mod
-    spec.loader.exec_module(mod)
-    mod.run_server(
-        host=args.host,
-        port=args.port,
-        project_root=Path.cwd(),
-        open_browser=not args.no_browser,
-    )
-    return 0
-
-
 def _load_reference(reference: str) -> Any:
     try:
         module_name, attribute = reference.split(":", 1)
@@ -166,7 +136,7 @@ def _init(directory: Path, *, force: bool) -> int:
         "main.py": """from pathlib import Path\n\nfrom ui import UI\nfrom offline import create_inspector\n\n\ndef main() -> int:\n    fixtures = Path(__file__).parent / \"fixtures\"\n    results = create_inspector().inspect_set(UI.READY, fixtures)\n    for result in results:\n        print(\"PASS\" if result.passed else \"FAIL\", result.fixture.path)\n    return 0 if all(result.passed for result in results) else 1\n\n\nif __name__ == \"__main__\":\n    raise SystemExit(main())\n""",
         "bootstrap.py": """# Add live MaaFramework Tasker/Controller/Resource setup here.\n# Keep the offline path in offline.py so fixture tests never touch a device.\n""",
         "offline.py": """from types import SimpleNamespace\n\nimport numpy\n\nfrom maaplus.dev import Inspector\n\n\nclass FixtureTasker:\n    def post_recognition(self, reco_type, locator, image):\n        height, width = image.shape[:2]\n        hit = bool(image.max())\n        detail = SimpleNamespace(\n            hit=hit,\n            box=(0, 0, width, height) if hit else None,\n            raw_detail={\"fixture_demo\": True},\n        )\n        job = SimpleNamespace(\n            succeeded=True,\n            wait=lambda: job,\n            get=lambda: SimpleNamespace(nodes=[SimpleNamespace(recognition=detail)]),\n        )\n        return job\n\n\ndef create_inspector() -> Inspector:\n    return Inspector(FixtureTasker(), output_dir=\".maaplus/inspect\")\n""",
-        "ui.py": """from maaplus import Template\n\n\nclass UI:\n    READY = Template(template=[\"ready.png\"])\n""",
+        "ui.py": """from maa.pipeline import JTemplateMatch\n\n\nclass UI:\n    READY = JTemplateMatch(template=[\"ready.png\"])\n""",
         "fixtures/README.md": """# Recognition fixtures\n\nPut BGR-compatible screenshots here. A non-empty screenshot is a hit in the dry-run tasker.\nAdd `expected.json` to assert `hit` and an optional `box`.\n""",
         "fixtures/expected.json": "{}\n",
         "tests/test_smoke.py": """def test_project_imports():\n    import ui\n    import offline\n\n    assert ui.UI.READY\n    assert offline.create_inspector()\n""",

@@ -4,16 +4,36 @@
 runtime, navigator, guard, trace, or debug writer between instances.
 
 ```python
+from maa.controller import AdbController
+from maa.tasker import Tasker
+from maa.toolkit import Toolkit
+
 from maaplus import App, InstanceManager
-from maaplus.dev import create_adb_controller
 
 
 def build_app(config):
     # Construct every Maa object and every stateful application object here.
-    # Use config.device when creating the ADB controller.
+    devices = [
+        device
+        for device in Toolkit.find_adb_devices()
+        if device.address == config.device
+    ]
+    if len(devices) != 1:
+        raise RuntimeError(f"Expected one discovered ADB device for {config.device!r}")
+    device = devices[0]
+    controller = AdbController(
+        adb_path=device.adb_path,
+        address=device.address,
+        screencap_methods=device.screencap_methods,
+        input_methods=device.input_methods,
+        config=device.config,
+    )
+    if not controller.post_connection().wait().succeeded:
+        raise RuntimeError(f"Failed to connect ADB device: {device.address}")
+
     return App.from_maa(
-        tasker=create_tasker(),
-        controller=create_adb_controller(serial=config.device),
+        tasker=Tasker(),
+        controller=controller,
         resource=load_resource(),
         navigator=create_navigator(),
         debug=create_debug(config.debug_dir),
@@ -21,6 +41,7 @@ def build_app(config):
     )
 
 
+Toolkit.init_option(".maaplus")
 with InstanceManager(build_app, root_dir=".maaplus/instances", max_workers=2) as fleet:
     fleet.create("phone-a", "emulator-5554")
     fleet.create("phone-b", "emulator-5556")
@@ -32,6 +53,9 @@ with InstanceManager(build_app, root_dir=".maaplus/instances", max_workers=2) as
     for future in futures.values():
         future.result()
 ```
+
+`load_resource`, `create_navigator`, `create_debug`, `create_trace`, and `daily_handler` above belong
+to the application. Load the resource bundle and check the load result in `load_resource`.
 
 The factory receives an immutable `InstanceConfig` with `name`, `device`, `directory`,
 `debug_dir`, and `trace_dir`. The manager rejects duplicate names and duplicate device identifiers,

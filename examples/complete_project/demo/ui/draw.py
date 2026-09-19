@@ -1,21 +1,21 @@
-from maaplus import OCR, Template
+from maa.pipeline import JOCR, JTemplateMatch
 
 
 class DrawUI:
-    MARKER = Template(
+    MARKER = JTemplateMatch(
         template=["draw/marker.png"],
         threshold=[0.85],
     )
 
-    FREE_DRAW = OCR(
+    FREE_DRAW = JOCR(
         expected=["免费"],
     )
 
-    CONFIRM = OCR(
+    CONFIRM = JOCR(
         expected=["确定"],
     )
 
-    RESULT_CLOSE = Template(
+    RESULT_CLOSE = JTemplateMatch(
         template=["draw/result_close.png"],
         threshold=[0.85],
     )

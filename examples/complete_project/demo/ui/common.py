@@ -1,13 +1,13 @@
-from maaplus import Template
+from maa.pipeline import JTemplateMatch
 
 
 class CommonUI:
-    BACK = Template(
+    BACK = JTemplateMatch(
         template=["common/back.png"],
         threshold=[0.85],
     )
 
-    LOADING = Template(
+    LOADING = JTemplateMatch(
         template=["common/loading.png"],
         threshold=[0.85],
     )

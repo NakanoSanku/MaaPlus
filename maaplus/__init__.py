@@ -13,7 +13,7 @@ from .instances import (
     InstanceSnapshot,
     InstanceState,
 )
-from .locator import AllOf, FirstOf, Locator, OCR, Template
+from .locator import Locator
 from .routing import NavigationError, NavigationState, Navigator, RoutedTaskHandler, routed
 from .runtime import MatchResult, Runtime
 from .scheduler import Scheduler
@@ -37,7 +37,6 @@ YIELD = TaskResult.YIELD
 DONE = TaskResult.DONE
 
 __all__ = [
-    "AllOf",
     "AppFactory",
     "App",
     "ClickConfig",
@@ -51,7 +50,6 @@ __all__ = [
     "DONE",
     "ExecutionContext",
     "ExecutionSummary",
-    "FirstOf",
     "InteractionConfig",
     "InstanceConfig",
     "InstanceControlError",
@@ -64,7 +62,6 @@ __all__ = [
     "NavigationError",
     "NavigationState",
     "Navigator",
-    "OCR",
     "PathInterpolator",
     "Point",
     "PointResolver",
@@ -80,7 +77,6 @@ __all__ = [
     "TaskResult",
     "TaskStatus",
     "TaskTimeoutError",
-    "Template",
     "Tick",
     "Timing",
     "TimingResolver",

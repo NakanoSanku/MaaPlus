@@ -100,6 +100,11 @@ class App(Generic[ContextT]):
         trace: Any | None = None,
         guards: Iterable[Guard] | None = None,
     ) -> App[ContextT]:
+        """Build an app from MaaFramework objects prepared by the application.
+
+        Create and connect the native controller and load resource bundles before calling this
+        method. With ``bind=True``, the resource and controller are bound to the supplied tasker.
+        """
         return cls(
             Scheduler.from_maa(
                 tasker=tasker,

@@ -1,123 +1,108 @@
-# Locator composition
+# Locators
 
-MaaPlus keeps recognition declarative: a Locator describes **what should be recognized**, while `Tick` and `Runtime` decide **when and against which screenshot it is recognized**.
+A Locator is a MaaFramework recognition parameter object. Import recognition types directly from
+`maa.pipeline`; MaaPlus passes them to the native tasker without rebuilding them. MaaPlus keeps
+`Locator` as a type annotation for the native `JRecognitionParam` union.
 
-Normal MaaFramework recognition parameters are still valid Locators:
+## Native recognition parameters
 
 ```python
-from maaplus import OCR, Template
+from maa.pipeline import JOCR, JTemplateMatch
 
-START = Template(
+START = JTemplateMatch(
     template=["start.png"],
     threshold=[0.85],
+    roi=(0, 0, 1280, 720),
 )
-
-CONFIRM = OCR(expected=["确认"])
+CONFIRM = JOCR(expected=["确认"])
 ```
 
-Use them normally through `Tick`:
+Use any supported native fields directly. Template paths are relative to the resource bundle's
+`image/` directory. For several images with the same recognition parameters, use one
+`JTemplateMatch(template=["start_a.png", "start_b.png"], threshold=[0.85])`.
+
+Other native types include `JFeatureMatch`, `JColorMatch`, and `JCustomRecognition`.
+The calling code is the same for every recognition type:
 
 ```python
-if start := tick.match(START):
-    start.click()
+if result := tick.match(START):
+    result.click()
 ```
 
-## Multiple templates of the same element
+## Ordered fallback with JOr
 
-If several images use the same TemplateMatch parameters, prefer one `Template` with multiple templates:
+`JOr` tries members in order and returns the first successful recognition. Each member is an
+inline recognition dictionary in MaaFramework's pipeline format:
 
 ```python
-START = Template(
-    template=[
-        "soul/start.png",
-        "awakening/start.png",
-        "orochi/start.png",
+from maa.pipeline import JOr
+
+START = JOr(any_of=[
+    {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {"template": ["start.png"], "threshold": [0.85]},
+        },
+    },
+    {
+        "recognition": {
+            "type": "OCR",
+            "param": {"expected": ["挑战"]},
+        },
+    },
+])
+```
+
+Use ordered fallback when algorithms, ROIs, or other parameters differ. Multiple equivalent
+templates can stay in one `JTemplateMatch`.
+
+## Requiring all members with JAnd
+
+`JAnd` requires every member to match. `box_index` selects which top-level member supplies the
+result box, including the default target for `MatchResult.click()`:
+
+```python
+from maa.pipeline import JAnd
+
+READY_TO_START = JAnd(
+    all_of=[
+        {
+            "recognition": {
+                "type": "TemplateMatch",
+                "param": {"template": ["battle/title.png"]},
+            },
+        },
+        {
+            "recognition": {
+                "type": "TemplateMatch",
+                "param": {"template": ["battle/start.png"]},
+            },
+        },
     ],
-    threshold=[0.85],
-)
-```
-
-Do not use `FirstOf` just to split identical TemplateMatch configuration into separate Locators.
-
-## FirstOf
-
-`FirstOf` represents ordered fallback recognition. It is backed by MaaFramework's native `Or` recognition.
-
-```python
-from maaplus import FirstOf, OCR, Template
-
-START = FirstOf(
-    Template(
-        template=["start.png"],
-        threshold=[0.85],
-    ),
-    OCR(expected=["挑战"]),
-)
-```
-
-The sub-Locators are attempted in order. Recognition stops when the first one succeeds.
-
-Use `FirstOf` when one semantic UI element may need different recognition algorithms, ROIs, thresholds, or other parameters.
-
-## AllOf
-
-`AllOf` represents a semantic condition that requires every sub-Locator to match. It is backed by MaaFramework's native `And` recognition.
-
-```python
-from maaplus import AllOf, OCR, Template
-
-BATTLE_PAGE = AllOf(
-    Template(template=["battle/icon.png"]),
-    OCR(expected=["自动"]),
-)
-```
-
-This is useful when one image or one text match alone is not enough to identify a page reliably.
-
-### Choosing the result box
-
-An `AllOf` may match several different UI elements, but `MatchResult` still needs one box for operations such as `click()`.
-
-Use `box_index` to select which sub-Locator supplies that box:
-
-```python
-READY_TO_START = AllOf(
-    Template(template=["battle/title.png"]),
-    Template(template=["battle/start.png"]),
     box_index=1,
 )
 
 if ready := tick.match(READY_TO_START):
-    ready.click()  # clicks the box returned by battle/start.png
+    ready.click()  # Uses the battle/start.png result box.
 ```
 
-`box_index` defaults to `0` and must refer to an existing top-level sub-Locator.
+Choose a zero-based `box_index` within the member list. Studio checks empty combinations, invalid
+indices, missing references, and cycles before saving or validating recognition.
 
-## Composition
+## Nested combinations
 
-`FirstOf` and `AllOf` are themselves normal Locators and may be nested:
+Nested members use `"type": "And"` or `"type": "Or"`, with `all_of` or `any_of` inside `param`.
+The nested value is an inline dictionary, not a bare parameter object. MaaPlus does not add a
+separate combination syntax or change member order.
 
-```python
-BATTLE_READY = AllOf(
-    FirstOf(
-        Template(template=["battle/title_a.png"]),
-        Template(template=["battle/title_b.png"]),
-    ),
-    OCR(expected=["挑战"]),
-    box_index=1,
-)
-```
+[MaaPlus Studio](../studio/README.md) lets you select members visually and generates the nested
+native dictionaries. It expands cross-module references inline, so generated UI modules do not
+depend on each other. Recognition validation and Python generation share the same config compiler.
 
-The calling code remains unchanged:
+Keep task transitions and action sequences in handlers and navigation code. Combinations describe
+recognition conditions. Custom recognition callbacks and their registration remain application-owned;
+see [the complete example](../examples/complete_project/CUSTOM_RECOGNITION.md).
 
-```python
-if result := tick.match(BATTLE_READY):
-    result.click()
-```
-
-Keep business flow outside Locator composition. `FirstOf` and `AllOf` should describe recognition semantics, not task state transitions or action sequences.
-
-Custom recognition is application-owned. Keep the callback and its registration beside the
-example's bootstrap code, then pass a native `JCustomRecognition` locator to `Tick.match()`.
-See [the complete example](../examples/complete_project/CUSTOM_RECOGNITION.md) for the full
-multi-point color implementation.
+Studio imports current `maa.pipeline` definitions only, including ordinary Python import aliases.
+Inline combinations use the structured `recognition: {type, param}` format shown above.
+Unsupported imports and definitions are rejected with a source location, and the file stays unchanged.

@@ -9,8 +9,8 @@ from unittest.mock import ANY, Mock
 
 import numpy
 
-from maa.pipeline import JRecognitionType
-from maaplus import DONE, Scheduler, Task, Template
+from maa.pipeline import JRecognitionType, JTemplateMatch
+from maaplus import DONE, Scheduler, Task
 from maaplus.dev import FixtureSet, Inspector, JsonlTrace, TaskerTraceSink, TraceSession, assert_expected
 
 
@@ -48,7 +48,7 @@ class DevToolsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             trace = JsonlTrace(Path(directory) / "run.jsonl")
             result = Inspector(tasker, output_dir=Path(directory) / "images", trace=trace).inspect(
-                Template(template=["button.png"]), image, label="button", image_format="bgr"
+                JTemplateMatch(template=["button.png"]), image, label="button", image_format="bgr"
             )
             trace.close()
             events = [json.loads(line) for line in (Path(directory) / "run.jsonl").read_text().splitlines()]

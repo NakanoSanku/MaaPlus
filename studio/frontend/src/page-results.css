@@ -1,0 +1,29 @@
+.bottom-panel.page-test-panel { height: min(390px, 46vh); }
+.bottom-tabs > button.page-test-trigger { padding: 6px 9px; border: 1px solid #47716f; border-radius: 4px; color: #b2e9df; font-size: 10px; }
+.page-results { font-size: 11px; }
+.page-test-summary { position: sticky; top: -13px; z-index: 1; padding: 0 0 11px; background: #111922; }
+.page-test-heading, .page-test-counts { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.page-test-heading strong { font-size: 12px; color: #d4e3ec; }
+.page-test-heading code, .page-test-summary small { color: #849bad; font-size: 10px; }
+.page-test-heading > span { margin-left: auto; color: #b6dcd9; }
+.page-test-heading button { font-size: 10px; padding: 4px 9px; }
+.page-test-counts { margin: 11px 0 7px; color: #9bb1c3; font-variant-numeric: tabular-nums; }
+.page-test-summary progress { display: block; width: 100%; height: 4px; border: 0; margin-bottom: 9px; accent-color: #72e0db; }
+.page-test-summary progress::-webkit-progress-bar { background: #263745; border-radius: 3px; }
+.page-test-summary progress::-webkit-progress-value { background: #72e0db; border-radius: 3px; }
+.page-hit { color: #a3e4bf; }.page-miss { color: #e7cc8a; }.page-error { color: #edb0b3; }.page-pending { color: #8297ab; }.page-running { color: #92dedb; }
+.page-test-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 11px; }
+.page-test-table th { padding: 7px 9px; color: #89a0b6; font-size: 10px; font-weight: 500; }
+.page-test-table td { padding: 5px 9px; border-top: 1px solid #253440; }
+.page-test-table th:last-child, .page-test-table td:last-child { text-align: right; white-space: nowrap; color: #98b0c5; font-variant-numeric: tabular-nums; }
+.page-test-table td:first-child { width: 60%; }
+.page-test-table td:nth-child(2) { white-space: nowrap; }
+.page-test-table button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 3px 0; background: transparent; border: 0; text-align: left; }
+.page-test-table button span { overflow-wrap: anywhere; }
+.page-test-table button code { color: #7e9aac; font-size: 10px; overflow-wrap: anywhere; }
+.page-test-table tr.chosen { background: #20363c; }
+.page-test-table tr:hover { background: #1b2d36; }
+.page-test-detail { margin-top: 12px; border-top: 1px solid #324755; padding-top: 12px; }
+.page-test-detail > div { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+.page-test-detail > code { display: block; color: #9ac6d0; margin-bottom: 9px; }
+.page-test-detail pre { padding: 9px; background: #0e171f; border-radius: 4px; }

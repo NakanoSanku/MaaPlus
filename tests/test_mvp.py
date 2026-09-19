@@ -5,8 +5,8 @@ from datetime import datetime, timedelta
 from threading import Event, Thread
 from types import SimpleNamespace
 
-from maa.pipeline import JOCR, JFeatureMatch, JRecognitionType, JTemplateMatch
-from maaplus import MatchResult, OCR, Runtime, Scheduler, Task, TaskResult, Template, Tick, point, routed
+from maa.pipeline import JFeatureMatch, JOCR, JRecognitionType, JTemplateMatch
+from maaplus import MatchResult, Runtime, Scheduler, Task, TaskResult, Tick, point, routed
 
 
 def make_match(hit: bool, box=None, click_area=None) -> MatchResult:
@@ -111,16 +111,12 @@ class FakeTasker:
 
 
 class RecognitionParamTests(unittest.TestCase):
-    def test_common_aliases_are_native_maa_classes(self) -> None:
-        self.assertIs(Template, JTemplateMatch)
-        self.assertIs(OCR, JOCR)
-
     def test_runtime_passes_template_param_through_without_rebuilding(self) -> None:
         detail = SimpleNamespace(hit=True, box=(1, 2, 3, 4))
         tasker = FakeTasker(detail)
         runtime = Runtime(tasker=tasker, controller=FakeController())
         image = object()
-        locator = Template(
+        locator = JTemplateMatch(
             template=["button.png"],
             threshold=[0.85],
             roi_offset=(1, 2, 3, 4),
@@ -138,7 +134,7 @@ class RecognitionParamTests(unittest.TestCase):
         detail = SimpleNamespace(hit=False, box=None)
         tasker = FakeTasker(detail)
         runtime = Runtime(tasker=tasker, controller=FakeController())
-        locator = OCR(
+        locator = JOCR(
             expected=["确认"],
             replace=[["確認", "确认"]],
             color_filter="white_text",
@@ -168,8 +164,8 @@ class RecognitionParamTests(unittest.TestCase):
 class TaskHandlerTests(unittest.TestCase):
     def test_scheduler_invokes_handler_with_one_fixed_tick_snapshot(self) -> None:
         runtime = FakeRuntime()
-        first = Template(template=["first.png"])
-        second = Template(template=["second.png"])
+        first = JTemplateMatch(template=["first.png"])
+        second = JTemplateMatch(template=["second.png"])
         runtime.hits[id(first)] = (True, (10, 20, 30, 40))
         runtime.hits[id(second)] = (True, (50, 60, 20, 20))
         scheduler = Scheduler(runtime)
@@ -209,7 +205,7 @@ class TaskHandlerTests(unittest.TestCase):
 
     def test_custom_click_resolver_and_duration(self) -> None:
         runtime = FakeRuntime()
-        locator = Template(template=["button.png"])
+        locator = JTemplateMatch(template=["button.png"])
         runtime.hits[id(locator)] = (True, (10, 20, 30, 40))
         image = runtime.screenshot()
 

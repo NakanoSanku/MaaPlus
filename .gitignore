@@ -1,6 +1,7 @@
 # Python-generated files
 __pycache__/
 *.py[oc]
+.pytest_cache/
 build/
 dist/
 wheels/
@@ -12,8 +13,3 @@ wheels/
 # Local debug snapshots and MaaFramework logs
 .debug/
 .maaplus/
-
-# Frontend / Node
-tools/frontend/node_modules/
-tools/frontend/dist/
-tools/frontend/.npmrc

@@ -1,18 +1,18 @@
-from maaplus import Template
+from maa.pipeline import JTemplateMatch
 
 
 class HomeUI:
-    MARKER = Template(
+    MARKER = JTemplateMatch(
         template=["home/marker.png"],
         threshold=[0.85],
     )
 
-    EXPLORE = Template(
+    EXPLORE = JTemplateMatch(
         template=["home/explore.png"],
         threshold=[0.85],
     )
 
-    DRAW = Template(
+    DRAW = JTemplateMatch(
         template=["home/draw.png"],
         threshold=[0.85],
     )
